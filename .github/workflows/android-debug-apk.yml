@@ -78,6 +78,7 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -24
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump xmltree "$APK" AndroidManifest.xml | grep -m1 'RtspPlayerActivity'
           unzip -t "$APK"
 
       - name: Enable KVM
@@ -86,7 +87,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Android 16 install and activity smoke test
+      - name: Android 16 install and launcher smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -99,7 +100,6 @@ jobs:
             adb shell am start -W -n com.vk.cy01streamlab4/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
-            adb shell dumpsys package com.vk.cy01streamlab4 | grep -m1 'RtspPlayerActivity'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
