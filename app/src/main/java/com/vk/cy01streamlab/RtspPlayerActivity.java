@@ -38,6 +38,7 @@ public class RtspPlayerActivity extends Activity {
     private static final String HOST = "192.168.49.96";
     private static final int PORT = 8554;
     private static final String[] PATHS = {
+            "/testStream",
             "/testH264VideoStreamer",
             "/xxx.mov",
             "/h264",
@@ -52,15 +53,15 @@ public class RtspPlayerActivity extends Activity {
     private TextView logView;
     private ExoPlayer player;
     private volatile boolean detecting;
-    private String activePath = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         buildUi();
-        log("CY01 RTSP Player v0.4 started");
-        log("Target: rtsp://" + HOST + ":" + PORT + " ; RTP over RTSP/TCP forced");
+        log("CY01 RTSP Player v0.5 started");
+        log("Target: rtsp://" + HOST + ":" + PORT);
+        log("New primary path: /testStream (the stock live555 testH264VideoStreamer session name)");
         log("Proof rule: READY is not enough; LIVE is confirmed only after EVENT_RENDERED_FIRST_FRAME");
         autoDetectAndPlay();
     }
@@ -72,7 +73,7 @@ public class RtspPlayerActivity extends Activity {
         root.setPadding(p, p, p, p);
 
         TextView title = new TextView(this);
-        title.setText("CY01 LIVE VIDEO");
+        title.setText("CY01 LIVE VIDEO v0.5");
         title.setTextSize(23f);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(title);
@@ -127,7 +128,7 @@ public class RtspPlayerActivity extends Activity {
         }
         detecting = true;
         status("RTSP: searching for SDP...");
-        log("Sending DESCRIBE to candidate RTSP paths");
+        log("Sending DESCRIBE to candidate RTSP paths; /testStream is first");
 
         io.execute(() -> {
             String selected = null;
@@ -135,12 +136,14 @@ public class RtspPlayerActivity extends Activity {
             try {
                 for (String path : PATHS) {
                     DescribeResult result = describe(path);
-                    log("DESCRIBE " + path + " -> " + result.statusLine
-                            + (result.body.isEmpty() ? "" : " | " + compact(result.body)));
+                    log("DESCRIBE " + path + " -> " + result.statusLine);
+                    if (!result.body.isEmpty()) {
+                        logSdpDetails(path, result.body);
+                    }
                     if (result.code == 200 && fallback200 == null) fallback200 = path;
                     if (result.code == 200 && looksLikeSdp(result.body)) {
                         selected = path;
-                        log("SDP video description found at " + path);
+                        log("SDP VIDEO DESCRIPTION FOUND at " + path);
                         break;
                     }
                 }
@@ -153,7 +156,7 @@ public class RtspPlayerActivity extends Activity {
                 }
 
                 final String chosen = selected;
-                runOnUiThread(() -> startPlayer(chosen));
+                runOnUiThread(() -> startPlayer(chosen, true));
             } finally {
                 detecting = false;
             }
@@ -169,7 +172,7 @@ public class RtspPlayerActivity extends Activity {
             String request = "DESCRIBE " + uri + " RTSP/1.0\r\n"
                     + "CSeq: 2\r\n"
                     + "Accept: application/sdp\r\n"
-                    + "User-Agent: CY01StreamLab/0.4\r\n\r\n";
+                    + "User-Agent: CY01StreamLab/0.5\r\n\r\n";
             OutputStream os = socket.getOutputStream();
             os.write(request.getBytes(StandardCharsets.US_ASCII));
             os.flush();
@@ -185,8 +188,9 @@ public class RtspPlayerActivity extends Activity {
             while ((line = br.readLine()) != null && !line.isEmpty()) {
                 String lower = line.toLowerCase(Locale.ROOT);
                 if (lower.startsWith("content-length:")) {
-                    try { contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim()); }
-                    catch (Exception ignored) {}
+                    try {
+                        contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+                    } catch (Exception ignored) {}
                 }
             }
 
@@ -222,12 +226,52 @@ public class RtspPlayerActivity extends Activity {
         return s.contains("v=0") && s.contains("m=video");
     }
 
-    private void startPlayer(String path) {
+    private void logSdpDetails(String path, String body) {
+        log("SDP RAW " + path + " | " + compact(body));
+        String[] lines = body.replace("\r", "").split("\n");
+        for (String line : lines) {
+            String lower = line.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("c=")
+                    || lower.startsWith("m=video")
+                    || lower.startsWith("a=rtpmap:")
+                    || lower.startsWith("a=fmtp:")
+                    || lower.startsWith("a=control:")
+                    || lower.startsWith("a=source-filter:")) {
+                log("SDP " + path + " | " + line.trim());
+            }
+        }
+        if (looksMulticast(body)) {
+            log("SDP transport hint: MULTICAST destination detected. Media3 supports UDP unicast or interleaved TCP, not RTP multicast.");
+        } else {
+            log("SDP transport hint: no multicast destination detected in SDP");
+        }
+    }
+
+    private boolean looksMulticast(String body) {
+        String[] lines = body.replace("\r", "").split("\n");
+        for (String line : lines) {
+            String s = line.trim();
+            if (!s.startsWith("c=IN IP4 ")) continue;
+            String address = s.substring("c=IN IP4 ".length()).trim();
+            int slash = address.indexOf('/');
+            if (slash >= 0) address = address.substring(0, slash);
+            String[] parts = address.split("\\.");
+            if (parts.length == 4) {
+                try {
+                    int first = Integer.parseInt(parts[0]);
+                    if (first >= 224 && first <= 239) return true;
+                } catch (Exception ignored) {}
+            }
+        }
+        return body.toLowerCase(Locale.ROOT).contains("a=source-filter:");
+    }
+
+    private void startPlayer(String path, boolean forceTcp) {
         releasePlayer();
-        activePath = path;
         String uri = "rtsp://" + HOST + ":" + PORT + path;
-        status("RTSP: connecting " + path);
-        log("Starting Media3 player: " + uri);
+        String transport = forceTcp ? "TCP interleaved" : "UDP-first";
+        status("RTSP: connecting " + path + " via " + transport);
+        log("Starting Media3 player: " + uri + " transport=" + transport);
 
         final ExoPlayer created = new ExoPlayer.Builder(this).build();
         player = created;
@@ -237,21 +281,23 @@ public class RtspPlayerActivity extends Activity {
             public void onPlaybackStateChanged(int playbackState) {
                 if (player != created) return;
                 if (playbackState == Player.STATE_BUFFERING) {
-                    status("RTSP: buffering " + path + "...");
-                    log("Player state = BUFFERING path=" + path);
+                    status("RTSP: buffering " + path + " via " + transport + "...");
+                    log("Player state = BUFFERING path=" + path + " transport=" + transport);
                 } else if (playbackState == Player.STATE_READY) {
                     status("RTSP: session READY; waiting for first video frame...");
-                    log("PLAYER READY path=" + path + ": RTSP session prepared; rendered frame not yet confirmed");
+                    log("PLAYER READY path=" + path + " transport=" + transport
+                            + ": session prepared; rendered frame not yet confirmed");
                 } else if (playbackState == Player.STATE_ENDED) {
                     status("RTSP: stream ended");
-                    log("Player state = ENDED path=" + path);
+                    log("Player state = ENDED path=" + path + " transport=" + transport);
                 }
             }
 
             @Override
             public void onVideoSizeChanged(VideoSize videoSize) {
                 if (player != created) return;
-                log("VIDEO SIZE path=" + path + " -> " + videoSize.width + "x" + videoSize.height);
+                log("VIDEO SIZE path=" + path + " transport=" + transport + " -> "
+                        + videoSize.width + "x" + videoSize.height);
             }
 
             @Override
@@ -260,8 +306,8 @@ public class RtspPlayerActivity extends Activity {
                 if (events.contains(Player.EVENT_RENDERED_FIRST_FRAME)) {
                     VideoSize size = callbackPlayer.getVideoSize();
                     status("RTSP: LIVE VIDEO CONFIRMED " + path);
-                    log("FIRST VIDEO FRAME RENDERED path=" + path + " size="
-                            + size.width + "x" + size.height
+                    log("FIRST VIDEO FRAME RENDERED path=" + path + " transport=" + transport
+                            + " size=" + size.width + "x" + size.height
                             + " -- definitive local decode/display proof");
                 }
             }
@@ -269,15 +315,23 @@ public class RtspPlayerActivity extends Activity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 if (player != created) return;
-                status("RTSP player error code=" + error.errorCode + " on " + path);
-                log("PLAYER ERROR path=" + path + " code=" + error.errorCode + " - " + safeMessage(error));
-                tryNextPath(path, created);
+                status("RTSP error " + error.errorCode + " on " + path + " via " + transport);
+                log("PLAYER ERROR path=" + path + " transport=" + transport
+                        + " code=" + error.errorCode + " - " + throwableChain(error));
+                if (forceTcp) {
+                    log("Retrying same RTSP path with UDP-first transport for classification");
+                    playerView.postDelayed(() -> {
+                        if (player == created) startPlayer(path, false);
+                    }, 700);
+                } else {
+                    tryNextPath(path, created);
+                }
             }
         });
 
         MediaItem item = MediaItem.fromUri(uri);
         RtspMediaSource source = new RtspMediaSource.Factory()
-                .setForceUseRtpTcp(true)
+                .setForceUseRtpTcp(forceTcp)
                 .setTimeoutMs(5000)
                 .createMediaSource(item);
         created.setMediaSource(source);
@@ -300,7 +354,7 @@ public class RtspPlayerActivity extends Activity {
         String next = PATHS[index + 1];
         log("Scheduling automatic fallback: " + failedPath + " -> " + next);
         playerView.postDelayed(() -> {
-            if (player == failedPlayer) startPlayer(next);
+            if (player == failedPlayer) startPlayer(next, true);
         }, 700);
     }
 
@@ -326,12 +380,25 @@ public class RtspPlayerActivity extends Activity {
 
     private String compact(String text) {
         String s = text.replace('\r', ' ').replace('\n', ' ').replaceAll("\\s+", " ").trim();
-        return s.length() > 220 ? s.substring(0, 220) + "..." : s;
+        return s.length() > 1000 ? s.substring(0, 1000) + "..." : s;
     }
 
     private String safeMessage(Throwable t) {
         String m = t.getMessage();
         return m == null || m.isEmpty() ? "no message" : m;
+    }
+
+    private String throwableChain(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = t;
+        int depth = 0;
+        while (cur != null && depth < 6) {
+            if (depth > 0) sb.append(" <- ");
+            sb.append(cur.getClass().getSimpleName()).append(": ").append(safeMessage(cur));
+            cur = cur.getCause();
+            depth++;
+        }
+        return sb.toString();
     }
 
     private void status(String text) {
