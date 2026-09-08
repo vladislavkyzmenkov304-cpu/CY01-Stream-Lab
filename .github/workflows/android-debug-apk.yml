@@ -69,10 +69,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Android package-manager install smoke test
+      - name: Android 16 package-manager install smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           arch: x86_64
           profile: pixel_6
           disable-animations: true
@@ -83,6 +83,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-stream-lab-v0.2.2-install-tested
+          name: cy01-stream-lab-v0.2.2-android16-install-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
