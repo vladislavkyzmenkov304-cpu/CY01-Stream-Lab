@@ -56,121 +56,139 @@ jobs:
               raise SystemExit('autoStop field insertion point not found')
           s = s.replace(field, field + '    private Runnable p2pConnectWatchdog;\n', 1)
 
-          old_fallback = '''        log("Waiting up to 5 s for the 0x14 ACK before fallback P2P discovery");
-
-        main.postDelayed(() -> {
-            if (!previewAckSeen && !p2pConnected) {
-                log("No preview ACK after 5 s; using fallback P2P discovery");
-                beginP2pDiscovery("fallback timer");
-            }
-        }, 5000);'''
-          new_fallback = '''        log("Waiting up to 7 s for the 0x14 ACK before fallback P2P discovery");
-
-        main.postDelayed(() -> {
-            if (!previewAckSeen && !p2pConnected) {
-                log("No preview ACK after 7 s; using fallback P2P discovery");
-                beginP2pDiscovery("fallback timer");
-            }
-        }, 7000);'''
+          old_fallback = (
+              '        log("Waiting up to 5 s for the 0x14 ACK before fallback P2P discovery");\n'
+              '\n'
+              '        main.postDelayed(() -> {\n'
+              '            if (!previewAckSeen && !p2pConnected) {\n'
+              '                log("No preview ACK after 5 s; using fallback P2P discovery");\n'
+              '                beginP2pDiscovery("fallback timer");\n'
+              '            }\n'
+              '        }, 5000);'
+          )
+          new_fallback = (
+              '        log("Waiting up to 7 s for the 0x14 ACK before fallback P2P discovery");\n'
+              '\n'
+              '        main.postDelayed(() -> {\n'
+              '            if (!previewAckSeen && !p2pConnected) {\n'
+              '                log("No preview ACK after 7 s; using fallback P2P discovery");\n'
+              '                beginP2pDiscovery("fallback timer");\n'
+              '            }\n'
+              '        }, 7000);'
+          )
           if old_fallback not in s:
               raise SystemExit('fallback timer block not found')
           s = s.replace(old_fallback, new_fallback, 1)
 
-          old_connect_success = '''                public void onSuccess() {
-                    log("Wi-Fi Direct connect requested");
-                }'''
-          new_connect_success = '''                public void onSuccess() {
-                    log("Wi-Fi Direct connect requested; watchdog armed for 8 s");
-                    armP2pConnectWatchdog();
-                }'''
+          old_connect_success = (
+              '                public void onSuccess() {\n'
+              '                    log("Wi-Fi Direct connect requested");\n'
+              '                }'
+          )
+          new_connect_success = (
+              '                public void onSuccess() {\n'
+              '                    log("Wi-Fi Direct connect requested; watchdog armed for 8 s");\n'
+              '                    armP2pConnectWatchdog();\n'
+              '                }'
+          )
           if old_connect_success not in s:
               raise SystemExit('connect success block not found')
           s = s.replace(old_connect_success, new_connect_success, 1)
 
           marker = '    private void requestConnectionInfo() {\n'
-          watchdog_method = '''    private void armP2pConnectWatchdog() {
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);
-        p2pConnectWatchdog = () -> {
-            if (p2pConnected || p2pManager == null || p2pChannel == null) return;
-            log("P2P connect watchdog: group not formed after 8 s; checking connection state");
-            p2pManager.requestConnectionInfo(p2pChannel, info -> {
-                if (info != null && info.groupFormed) {
-                    log("P2P watchdog found a formed group; resuming normal flow");
-                    onConnectionInfo(info);
-                    return;
-                }
-                log("P2P watchdog confirmed no group; cancelling stalled negotiation");
-                p2pManager.cancelConnect(p2pChannel, new WifiP2pManager.ActionListener() {
-                    @Override
-                    public void onSuccess() {
-                        log("Stalled P2P negotiation cancelled; retrying discovery");
-                        retryP2pAfterStall();
-                    }
-
-                    @Override
-                    public void onFailure(int reason) {
-                        log("cancelConnect result=" + p2pReason(reason) + " (" + reason + "); retrying anyway");
-                        retryP2pAfterStall();
-                    }
-                });
-            });
-        };
-        main.postDelayed(p2pConnectWatchdog, 8000);
-    }
-
-    private void retryP2pAfterStall() {
-        p2pConnectIssued = false;
-        p2pConnected = false;
-        p2pSessionHandled = false;
-        p2pDiscoveryStarted = false;
-        if (p2pConnectWatchdog != null) {
-            main.removeCallbacks(p2pConnectWatchdog);
-            p2pConnectWatchdog = null;
-        }
-        main.postDelayed(() -> beginP2pDiscovery("connect watchdog retry"), 900);
-    }
-
-'''
+          watchdog_method = (
+              '    private void armP2pConnectWatchdog() {\n'
+              '        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);\n'
+              '        p2pConnectWatchdog = () -> {\n'
+              '            if (p2pConnected || p2pManager == null || p2pChannel == null) return;\n'
+              '            log("P2P connect watchdog: group not formed after 8 s; checking connection state");\n'
+              '            p2pManager.requestConnectionInfo(p2pChannel, info -> {\n'
+              '                if (info != null && info.groupFormed) {\n'
+              '                    log("P2P watchdog found a formed group; resuming normal flow");\n'
+              '                    onConnectionInfo(info);\n'
+              '                    return;\n'
+              '                }\n'
+              '                log("P2P watchdog confirmed no group; cancelling stalled negotiation");\n'
+              '                p2pManager.cancelConnect(p2pChannel, new WifiP2pManager.ActionListener() {\n'
+              '                    @Override\n'
+              '                    public void onSuccess() {\n'
+              '                        log("Stalled P2P negotiation cancelled; retrying discovery");\n'
+              '                        retryP2pAfterStall();\n'
+              '                    }\n'
+              '\n'
+              '                    @Override\n'
+              '                    public void onFailure(int reason) {\n'
+              '                        log("cancelConnect result=" + p2pReason(reason) + " (" + reason + "); retrying anyway");\n'
+              '                        retryP2pAfterStall();\n'
+              '                    }\n'
+              '                });\n'
+              '            });\n'
+              '        };\n'
+              '        main.postDelayed(p2pConnectWatchdog, 8000);\n'
+              '    }\n'
+              '\n'
+              '    private void retryP2pAfterStall() {\n'
+              '        p2pConnectIssued = false;\n'
+              '        p2pConnected = false;\n'
+              '        p2pSessionHandled = false;\n'
+              '        p2pDiscoveryStarted = false;\n'
+              '        if (p2pConnectWatchdog != null) {\n'
+              '            main.removeCallbacks(p2pConnectWatchdog);\n'
+              '            p2pConnectWatchdog = null;\n'
+              '        }\n'
+              '        main.postDelayed(() -> beginP2pDiscovery("connect watchdog retry"), 900);\n'
+              '    }\n'
+              '\n'
+          )
           if marker not in s:
               raise SystemExit('requestConnectionInfo marker not found')
           s = s.replace(marker, watchdog_method + marker, 1)
 
-          formed_marker = '''        String owner = info.groupOwnerAddress == null ? "?" : info.groupOwnerAddress.getHostAddress();'''
-          formed_insert = '''        if (p2pConnectWatchdog != null) {
-            main.removeCallbacks(p2pConnectWatchdog);
-            p2pConnectWatchdog = null;
-            log("P2P connect watchdog cancelled: group formed");
-        }
-
-''' + formed_marker
+          formed_marker = '        String owner = info.groupOwnerAddress == null ? "?" : info.groupOwnerAddress.getHostAddress();'
+          formed_insert = (
+              '        if (p2pConnectWatchdog != null) {\n'
+              '            main.removeCallbacks(p2pConnectWatchdog);\n'
+              '            p2pConnectWatchdog = null;\n'
+              '            log("P2P connect watchdog cancelled: group formed");\n'
+              '        }\n'
+              '\n'
+              + formed_marker
+          )
           if formed_marker not in s:
               raise SystemExit('formed group marker not found')
           s = s.replace(formed_marker, formed_insert, 1)
 
-          stop_marker = '''        if (bleReady) {
-            log("Stopping preview [02 01 15 01]");'''
-          stop_insert = '''        if (p2pConnectWatchdog != null) {
-            main.removeCallbacks(p2pConnectWatchdog);
-            p2pConnectWatchdog = null;
-        }
-        if (bleReady) {
-            log("Stopping preview [02 01 15 01]");'''
+          stop_marker = (
+              '        if (bleReady) {\n'
+              '            log("Stopping preview [02 01 15 01]");'
+          )
+          stop_insert = (
+              '        if (p2pConnectWatchdog != null) {\n'
+              '            main.removeCallbacks(p2pConnectWatchdog);\n'
+              '            p2pConnectWatchdog = null;\n'
+              '        }\n'
+              '        if (bleReady) {\n'
+              '            log("Stopping preview [02 01 15 01]");'
+          )
           if stop_marker not in s:
               raise SystemExit('stop marker not found')
           s = s.replace(stop_marker, stop_insert, 1)
 
-          destroy_marker = '''        if (autoStopRunnable != null) main.removeCallbacks(autoStopRunnable);'''
-          destroy_insert = destroy_marker + '''
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);'''
+          destroy_marker = '        if (autoStopRunnable != null) main.removeCallbacks(autoStopRunnable);'
+          destroy_insert = destroy_marker + '\n        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);'
           if destroy_marker not in s:
               raise SystemExit('destroy marker not found')
           s = s.replace(destroy_marker, destroy_insert, 1)
 
           activity.write_text(s)
+
+          player = Path('app/src/main/java/com/vk/cy01streamlab/RtspPlayerActivity.java')
+          p = player.read_text().replace('CY01 RTSP Player v0.5 started', 'CY01 RTSP Player v0.6 started')
+          player.write_text(p)
           PY
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
           grep -n "SHOW RTSP VIDEO\|v0.6 started\|180000\|watchdog\|No preview ACK after 7" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "testStream\|v0.5 started" app/src/main/java/com/vk/cy01streamlab/RtspPlayerActivity.java
+          grep -n "testStream\|v0.6 started" app/src/main/java/com/vk/cy01streamlab/RtspPlayerActivity.java
           grep -n "RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
       - name: Set up Java 17
