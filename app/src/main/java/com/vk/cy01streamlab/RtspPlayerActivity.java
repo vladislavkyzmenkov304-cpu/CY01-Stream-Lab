@@ -18,7 +18,6 @@ import androidx.media3.exoplayer.rtsp.RtspMediaSource;
 import androidx.media3.ui.PlayerView;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -242,14 +241,14 @@ public class RtspPlayerActivity extends Activity {
 
             @Override
             public void onPlayerError(PlaybackException error) {
-                status("RTSP player error: " + error.errorCodeName);
-                log("PLAYER ERROR: " + error.errorCodeName + " - " + safeMessage(error));
+                status("RTSP player error code=" + error.errorCode);
+                log("PLAYER ERROR code=" + error.errorCode + " - " + safeMessage(error));
             }
         });
 
         MediaItem item = MediaItem.fromUri(uri);
         RtspMediaSource source = new RtspMediaSource.Factory()
-                .setForceUseRtpTcp()
+                .setForceUseRtpTcp(true)
                 .setTimeoutMs(5000)
                 .createMediaSource(item);
         player.setMediaSource(source);
