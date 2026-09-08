@@ -1,6 +1,8 @@
 package com.vk.cy01streamlab;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -13,6 +15,7 @@ import android.widget.TextView;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.VideoSize;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.rtsp.RtspMediaSource;
 import androidx.media3.ui.PlayerView;
@@ -49,6 +52,7 @@ public class RtspPlayerActivity extends Activity {
     private TextView logView;
     private ExoPlayer player;
     private volatile boolean detecting;
+    private String activePath = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +61,7 @@ public class RtspPlayerActivity extends Activity {
         buildUi();
         log("CY01 RTSP Player v0.4 started");
         log("Target: rtsp://" + HOST + ":" + PORT + " ; RTP over RTSP/TCP forced");
+        log("Proof rule: READY is not enough; LIVE is confirmed only after EVENT_RENDERED_FIRST_FRAME");
         autoDetectAndPlay();
     }
 
@@ -86,6 +91,7 @@ public class RtspPlayerActivity extends Activity {
         root.addView(playerView, playerParams);
 
         root.addView(button("AUTO DETECT + PLAY", v -> autoDetectAndPlay()));
+        root.addView(button("COPY PLAYER LOG", v -> copyPlayerLog()));
         root.addView(button("STOP PLAYER", v -> releasePlayer()));
         root.addView(button("CLOSE", v -> finish()));
 
@@ -213,36 +219,59 @@ public class RtspPlayerActivity extends Activity {
     private boolean looksLikeSdp(String body) {
         if (body == null) return false;
         String s = body.toLowerCase(Locale.ROOT);
-        return s.contains("v=0") && (s.contains("m=video") || s.contains("a=control:"));
+        return s.contains("v=0") && s.contains("m=video");
     }
 
     private void startPlayer(String path) {
         releasePlayer();
+        activePath = path;
         String uri = "rtsp://" + HOST + ":" + PORT + path;
         status("RTSP: connecting " + path);
         log("Starting Media3 player: " + uri);
 
-        player = new ExoPlayer.Builder(this).build();
-        playerView.setPlayer(player);
-        player.addListener(new Player.Listener() {
+        final ExoPlayer created = new ExoPlayer.Builder(this).build();
+        player = created;
+        playerView.setPlayer(created);
+        created.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
+                if (player != created) return;
                 if (playbackState == Player.STATE_BUFFERING) {
-                    status("RTSP: buffering...");
-                    log("Player state = BUFFERING");
+                    status("RTSP: buffering " + path + "...");
+                    log("Player state = BUFFERING path=" + path);
                 } else if (playbackState == Player.STATE_READY) {
-                    status("RTSP: LIVE VIDEO READY");
-                    log("PLAYER READY: RTSP media decoded by Android");
+                    status("RTSP: session READY; waiting for first video frame...");
+                    log("PLAYER READY path=" + path + ": RTSP session prepared; rendered frame not yet confirmed");
                 } else if (playbackState == Player.STATE_ENDED) {
                     status("RTSP: stream ended");
-                    log("Player state = ENDED");
+                    log("Player state = ENDED path=" + path);
+                }
+            }
+
+            @Override
+            public void onVideoSizeChanged(VideoSize videoSize) {
+                if (player != created) return;
+                log("VIDEO SIZE path=" + path + " -> " + videoSize.width + "x" + videoSize.height);
+            }
+
+            @Override
+            public void onEvents(Player callbackPlayer, Player.Events events) {
+                if (player != created) return;
+                if (events.contains(Player.EVENT_RENDERED_FIRST_FRAME)) {
+                    VideoSize size = callbackPlayer.getVideoSize();
+                    status("RTSP: LIVE VIDEO CONFIRMED " + path);
+                    log("FIRST VIDEO FRAME RENDERED path=" + path + " size="
+                            + size.width + "x" + size.height
+                            + " -- definitive local decode/display proof");
                 }
             }
 
             @Override
             public void onPlayerError(PlaybackException error) {
-                status("RTSP player error code=" + error.errorCode);
-                log("PLAYER ERROR code=" + error.errorCode + " - " + safeMessage(error));
+                if (player != created) return;
+                status("RTSP player error code=" + error.errorCode + " on " + path);
+                log("PLAYER ERROR path=" + path + " code=" + error.errorCode + " - " + safeMessage(error));
+                tryNextPath(path, created);
             }
         });
 
@@ -251,16 +280,46 @@ public class RtspPlayerActivity extends Activity {
                 .setForceUseRtpTcp(true)
                 .setTimeoutMs(5000)
                 .createMediaSource(item);
-        player.setMediaSource(source);
-        player.prepare();
-        player.play();
+        created.setMediaSource(source);
+        created.prepare();
+        created.play();
+    }
+
+    private void tryNextPath(String failedPath, ExoPlayer failedPlayer) {
+        int index = -1;
+        for (int i = 0; i < PATHS.length; i++) {
+            if (PATHS[i].equals(failedPath)) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0 || index + 1 >= PATHS.length) {
+            log("No further RTSP path candidates after " + failedPath);
+            return;
+        }
+        String next = PATHS[index + 1];
+        log("Scheduling automatic fallback: " + failedPath + " -> " + next);
+        playerView.postDelayed(() -> {
+            if (player == failedPlayer) startPlayer(next);
+        }, 700);
+    }
+
+    private void copyPlayerLog() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            log("Clipboard service unavailable");
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("CY01 RTSP player log", logView.getText()));
+        log("Player log copied to clipboard");
     }
 
     private void releasePlayer() {
         if (player != null) {
-            try { player.stop(); } catch (Exception ignored) {}
-            try { player.release(); } catch (Exception ignored) {}
+            ExoPlayer old = player;
             player = null;
+            try { old.stop(); } catch (Exception ignored) {}
+            try { old.release(); } catch (Exception ignored) {}
         }
         if (playerView != null) playerView.setPlayer(null);
     }
