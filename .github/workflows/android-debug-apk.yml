@@ -5,12 +5,6 @@ on:
     branches:
       - lab/cy01-stream-apk
       - main
-    paths:
-      - 'app/**'
-      - 'build.gradle'
-      - 'settings.gradle'
-      - 'gradle.properties'
-      - '.github/workflows/android-debug-apk.yml'
   pull_request:
     branches:
       - main
@@ -22,11 +16,25 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare clean package identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle')
+          s = p.read_text()
+          s = s.replace("applicationId 'com.vk.cy01streamlab'", "applicationId 'com.vk.cy01streamlab2'")
+          s = s.replace("applicationIdSuffix '.debug'", "")
+          s = s.replace("versionCode 2", "versionCode 202")
+          s = s.replace("versionName '0.2.0'", "versionName '0.2.2'")
+          p.write_text(s)
+          PY
+          grep -n "applicationId\|versionCode\|versionName" app/build.gradle
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -48,9 +56,33 @@ jobs:
       - name: Build debug APK
         run: gradle --stacktrace :app:assembleDebug
 
+      - name: Verify APK structure and signature
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -20
+          unzip -t "$APK"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android package-manager install smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm path com.vk.cy01streamlab2
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-stream-lab-debug
+          name: cy01-stream-lab-v0.2.2-install-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
