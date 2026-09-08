@@ -22,22 +22,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare clean package identity
+      - name: Prepare v0.4 package and test UI
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('app/build.gradle')
-          s = p.read_text()
-          s = s.replace("applicationId 'com.vk.cy01streamlab'", "applicationId 'com.vk.cy01streamlab3'")
+
+          gradle = Path('app/build.gradle')
+          s = gradle.read_text()
+          s = s.replace("applicationId 'com.vk.cy01streamlab'", "applicationId 'com.vk.cy01streamlab4'")
           s = s.replace("applicationIdSuffix '.debug'", "")
-          s = s.replace("versionCode 2", "versionCode 300")
-          s = s.replace("versionName '0.2.0'", "versionName '0.3.0'")
-          p.write_text(s)
+          s = s.replace("versionCode 2", "versionCode 400")
+          s = s.replace("versionName '0.2.0'", "versionName '0.4.0'")
+          gradle.write_text(s)
+
+          activity = Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java')
+          s = activity.read_text()
+          s = s.replace('CY01 Stream Lab v0.3 started', 'CY01 Stream Lab v0.4 started')
+          s = s.replace('CY01 Stream Lab v0.3', 'CY01 Stream Lab v0.4')
+          s = s.replace('v0.3: no explicit Android Network binding', 'v0.4: no explicit Android Network binding')
+          s = s.replace('v0.3 will NOT bind sockets', 'v0.4 will NOT bind sockets')
+          needle = '        box.addView(button("PROBE NOW", v -> runBaseProbeSuite()));\n'
+          insert = needle + '        box.addView(button("3. SHOW RTSP VIDEO", v -> startActivity(new Intent(MainActivityV03.this, RtspPlayerActivity.class))));\n'
+          if needle not in s:
+              raise SystemExit('PROBE NOW insertion point not found')
+          s = s.replace(needle, insert, 1)
+          s = s.replace('Preview auto-stops after 60 seconds.', 'Preview auto-stops after 180 seconds.')
+          s = s.replace('main.postDelayed(autoStopRunnable, 60000);', 'main.postDelayed(autoStopRunnable, 180000);')
+          activity.write_text(s)
           PY
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
+          grep -n "SHOW RTSP VIDEO\|v0.4 started\|180000" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -60,7 +77,7 @@ jobs:
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -20
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -24
           unzip -t "$APK"
 
       - name: Enable KVM
@@ -69,7 +86,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Android 16 package-manager install smoke test
+      - name: Android 16 install and activity smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -78,11 +95,14 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab3
+            adb shell pm path com.vk.cy01streamlab4
+            adb shell am start -W -n com.vk.cy01streamlab4/com.vk.cy01streamlab.RtspPlayerActivity
+            sleep 2
+            adb shell dumpsys activity activities | grep -m1 'RtspPlayerActivity'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-stream-lab-v0.3.0-direct-route-android16-tested
+          name: cy01-stream-lab-v0.4.0-rtsp-player-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
