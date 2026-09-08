@@ -96,9 +96,10 @@ jobs:
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm path com.vk.cy01streamlab4
-            adb shell am start -W -n com.vk.cy01streamlab4/com.vk.cy01streamlab.RtspPlayerActivity
+            adb shell am start -W -n com.vk.cy01streamlab4/com.vk.cy01streamlab.MainActivityV03
             sleep 2
-            adb shell dumpsys activity activities | grep -m1 'RtspPlayerActivity'
+            adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
+            adb shell dumpsys package com.vk.cy01streamlab4 | grep -m1 'RtspPlayerActivity'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
