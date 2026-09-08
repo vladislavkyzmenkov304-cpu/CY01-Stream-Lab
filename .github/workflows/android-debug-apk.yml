@@ -28,10 +28,10 @@ jobs:
           from pathlib import Path
           p = Path('app/build.gradle')
           s = p.read_text()
-          s = s.replace("applicationId 'com.vk.cy01streamlab'", "applicationId 'com.vk.cy01streamlab2'")
+          s = s.replace("applicationId 'com.vk.cy01streamlab'", "applicationId 'com.vk.cy01streamlab3'")
           s = s.replace("applicationIdSuffix '.debug'", "")
-          s = s.replace("versionCode 2", "versionCode 202")
-          s = s.replace("versionName '0.2.0'", "versionName '0.2.2'")
+          s = s.replace("versionCode 2", "versionCode 300")
+          s = s.replace("versionName '0.2.0'", "versionName '0.3.0'")
           p.write_text(s)
           PY
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
@@ -78,11 +78,11 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab2
+            adb shell pm path com.vk.cy01streamlab3
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-stream-lab-v0.2.2-android16-install-tested
+          name: cy01-stream-lab-v0.3.0-direct-route-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
