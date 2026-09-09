@@ -26,6 +26,11 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".RawRtspH264Activity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".RtspPlayerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
