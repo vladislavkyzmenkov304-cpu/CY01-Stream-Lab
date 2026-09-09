@@ -22,15 +22,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v0.7 package and test UI
-        run: python3 tools/prepare_v07.py
+      - name: Prepare v0.8 package and raw ch0 decoder UI
+        run: python3 tools/prepare_v08.py
 
-      - name: Verify v0.7 source preparation
+      - name: Verify v0.8 source preparation
         run: |
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
-          grep -n "v0.7 started\|SAFE RE-ARM\|watchdog\|240000" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "v0.7 started\|AUTO DELAYED RETRY\|/video\|/ch0\|MEDIA SESSION FOUND" app/src/main/java/com/vk/cy01streamlab/RtspPlayerActivity.java
-          grep -n "RtspPlayerActivity" app/src/main/AndroidManifest.xml
+          grep -n "v0.8 started\|RAW /ch0 H264 DECODER\|SAFE RE-ARM\|watchdog\|240000" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
+          grep -n "v0.8 started\|AUTO DELAYED RETRY\|/ch0\|MEDIA SESSION FOUND" app/src/main/java/com/vk/cy01streamlab/RtspPlayerActivity.java
+          grep -n "FIRST RTP VIDEO PACKET\|SETUP track1\|FIRST VIDEO FRAME RENDERED\|missing attribute fmtp" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
+          grep -n "RawRtspH264Activity\|RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -74,14 +75,14 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab7
-            adb shell am start -W -n com.vk.cy01streamlab7/com.vk.cy01streamlab.MainActivityV03
+            adb shell pm path com.vk.cy01streamlab8
+            adb shell am start -W -n com.vk.cy01streamlab8/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-stream-lab-v0.7.0-delayed-describe-rearm-android16-tested
+          name: cy01-stream-lab-v0.8.0-raw-ch0-h264-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
