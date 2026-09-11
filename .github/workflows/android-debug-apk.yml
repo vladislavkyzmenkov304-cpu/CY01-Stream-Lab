@@ -22,14 +22,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v1.0.1 BLE recovery package
-        run: python3 tools/prepare_v101.py
+      - name: Prepare v1.1 battery telemetry package
+        run: python3 tools/prepare_v11.py
 
-      - name: Verify v1.0.1 source preparation
+      - name: Verify v1.1 source preparation
         run: |
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
-          grep -n "v1.0.1 started\|MAX_ONE_TAP_SCAN_ATTEMPTS\|LIVE BLE scan attempt\|LIVE discovery stopped cleanly" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "CY01 LIVE v1.0.1\|MAX_LOG_CHARS\|LIVE STATS\|Compact diagnostic report copied" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
+          grep -n "v1.1 started\|LIVE BATTERY monitor armed\|observedRate\|MAX_ONE_TAP_SCAN_ATTEMPTS" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
+          grep -n "CY01 LIVE v1.1\|video=.*Mbps\|batteryStart\|interleaved resync\|Compact diagnostic report copied" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
           grep -n "RawRtspH264Activity\|RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
       - name: Set up Java 17
@@ -74,14 +74,14 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab101
-            adb shell am start -W -n com.vk.cy01streamlab101/com.vk.cy01streamlab.MainActivityV03
+            adb shell pm path com.vk.cy01streamlab11
+            adb shell am start -W -n com.vk.cy01streamlab11/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-live-v1.0.1-ble-recovery-android16-tested
+          name: cy01-live-v1.1.0-battery-telemetry-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
