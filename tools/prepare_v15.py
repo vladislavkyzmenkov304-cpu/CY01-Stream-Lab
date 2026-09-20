@@ -229,12 +229,12 @@ combined = '''    private void startCombinedMicTest() {
 '''
 r = require_replace(r, marker2, combined + marker2, "v1.5 combined mic method")
 
-report_old = '''                        + "audioRTP=%d audioAAC=%d audioBytes=%d micSampleBytes=%d\n"
-                        + "NAL SPS=%d PPS=%d IDR=%d resyncBytes=%d decoderRecoveries=%d\n\n",
+report_old = '''                        + "audioRTP=%d audioAAC=%d audioBytes=%d micSampleBytes=%d\\n"
+                        + "NAL SPS=%d PPS=%d IDR=%d resyncBytes=%d decoderRecoveries=%d\\n\\n",
 '''
-report_new = '''                        + "audioRTP=%d audioAAC=%d audioBytes=%d micSampleBytes=%d\n"
-                        + "bleMicStarted=%s bleOpusFrames=%d bleOpusBytes=%d\n"
-                        + "NAL SPS=%d PPS=%d IDR=%d resyncBytes=%d decoderRecoveries=%d\n\n",
+report_new = '''                        + "audioRTP=%d audioAAC=%d audioBytes=%d micSampleBytes=%d\\n"
+                        + "bleMicStarted=%s bleOpusFrames=%d bleOpusBytes=%d\\n"
+                        + "NAL SPS=%d PPS=%d IDR=%d resyncBytes=%d decoderRecoveries=%d\\n\\n",
 '''
 r = require_replace(r, report_old, report_new, "v1.5 report BLE mic fields")
 
