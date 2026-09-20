@@ -134,15 +134,16 @@ methods = '''    public static boolean requestBleMicProbe(long durationMs) {
 '''
 s = require_replace(s, method_marker, methods + method_marker, "v1.5 BLE mic methods")
 
-destroy_marker = '''        stopLiveBatteryMonitoring();
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);
+destroy_marker = '''    @Override
+    protected void onDestroy() {
 '''
-destroy_new = '''        stopLiveBatteryMonitoring();
+destroy_new = '''    @Override
+    protected void onDestroy() {
         if (bleMicStopRunnable != null) main.removeCallbacks(bleMicStopRunnable);
         if (activeInstance == this) activeInstance = null;
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);
 '''
 s = require_replace(s, destroy_marker, destroy_new, "v1.5 mic cleanup")
+
 
 activity.write_text(s)
 
