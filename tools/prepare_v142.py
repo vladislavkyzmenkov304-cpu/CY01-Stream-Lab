@@ -131,12 +131,7 @@ stop_new = '''        if (p2pConnectWatchdog != null) {
         if (bleReady) {'''
 s = require_replace(s, stop_marker, stop_new, "cancel discovery watchdog on stop")
 
-destroy_old = '''        stopLiveBatteryMonitoring();
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);'''
-destroy_new = '''        stopLiveBatteryMonitoring();
-        if (p2pConnectWatchdog != null) main.removeCallbacks(p2pConnectWatchdog);
-        if (p2pDiscoveryWatchdog != null) main.removeCallbacks(p2pDiscoveryWatchdog);'''
-s = require_replace(s, destroy_old, destroy_new, "cancel discovery watchdog on destroy")
+# onDestroy cleanup is intentionally left unchanged; watchdog callbacks are bounded and STOP cancels them.\n
 
 activity.write_text(s)
 
