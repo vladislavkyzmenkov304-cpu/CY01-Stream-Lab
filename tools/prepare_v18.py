@@ -24,12 +24,10 @@ field_new=field+"""    private int bleRecoveryAttempt;
 """
 s=rr(s,field,field_new,"ble recovery fields")
 
-found='''            log("Found " + name + " / " + device.getAddress());
+needle='''            status("BLE: connecting | P2P: " + (p2pConnected ? "connected" : "disconnected"));'''
+replacement='''            lastBleDevice = device;
             status("BLE: connecting | P2P: " + (p2pConnected ? "connected" : "disconnected"));'''
-found_new='''            log("Found " + name + " / " + device.getAddress());
-            lastBleDevice = device;
-            status("BLE: connecting | P2P: " + (p2pConnected ? "connected" : "disconnected"));'''
-s=rr(s,found,found_new,"remember device")
+s=rr(s,needle,replacement,"remember device")
 
 desc="""            bleReady = statusCode == BluetoothGatt.GATT_SUCCESS;
             log("BLE command channel ready=" + bleReady + " status=" + statusCode);
