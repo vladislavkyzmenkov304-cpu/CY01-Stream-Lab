@@ -107,13 +107,12 @@ ipnew="""            if (p2pConnected && !candidateIp.startsWith("192.168.49."))
 """
 s=rr(s,ipblock,ipnew,"candidate probe")
 
-fallback="""            glassesIp = "192.168.49.96";
+fallback='''            glassesIp = "192.168.49.96";
             log("No accepted BLE P2P IP after retries; using confirmed CY01 fallback " + glassesIp);
-            main.postDelayed(this::runBaseProbeSuite, 500);
-"""
-fallback_new="""            log("No accepted BLE P2P IP after retries; probing likely CY01 addresses instead of trusting fixed .96");
-            discoverCy01RtspPeer();
-"""
+            if (oneTapLiveRequested) main.postDelayed(this::oneTapCheckCh0AndLaunch, 500);
+            else main.postDelayed(this::runBaseProbeSuite, 500);'''
+fallback_new='''            log("No accepted BLE P2P IP after retries; probing likely CY01 addresses instead of trusting fixed .96");
+            discoverCy01RtspPeer();'''
 s=rr(s,fallback,fallback_new,"fallback discovery")
 
 marker2="""    private void logP2pRoutes() {
