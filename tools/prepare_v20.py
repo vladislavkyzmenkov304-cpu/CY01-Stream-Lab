@@ -180,7 +180,7 @@ new_recovery = """                    micTransitionExpected = false;
                     boolean recoveryRequested = MainActivityV03.requestCameraRecoveryAfterMic();
                     log("MIC TEST: full camera recovery requested=" + recoveryRequested);
                     if (recoveryRequested) {
-                        startCameraRecoveryPoll();
+                        log("MIC TEST: route rebuild delegated to main activity");
                     } else {
                         status("Camera recovery unavailable; copy report.");
                     }
