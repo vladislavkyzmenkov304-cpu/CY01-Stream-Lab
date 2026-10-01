@@ -1,3 +1,107 @@
 from pathlib import Path
 
-print("v2.0")
+def rr(t, o, n, label, count=1):
+    if o not in t:
+        raise SystemExit(label + " not found")
+    return t.replace(o, n, count)
+
+g = Path("app/build.gradle")
+s = g.read_text()
+s = rr(s, "applicationId 'com.vk.cy01streamlab19'", "applicationId 'com.vk.cy01streamlab20'", "app id")
+s = rr(s, "versionCode 1900", "versionCode 2000", "version code")
+s = rr(s, "versionName '1.9.0'", "versionName '2.0.0'", "version name")
+g.write_text(s)
+
+p = Path("app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java")
+s = p.read_text()
+s = s.replace("CY01 Live v1.9 started", "CY01 Live v2.0 started")
+s = s.replace("CY01 Live v1.9", "CY01 Live v2.0")
+s = s.replace("CY01StreamLab-OneTap/1.9", "CY01StreamLab-OneTap/2.0")
+s = s.replace("v1.9: no explicit Android Network binding", "v2.0: no explicit Android Network binding")
+s = s.replace("v1.9 will NOT bind sockets", "v2.0 will NOT bind sockets")
+
+field = "    private static volatile MainActivityV03 activeInstance;\n"
+field_new = field + """    public static volatile boolean cameraRecoveryRequested;
+    public static volatile boolean cameraRecoveryReady;
+    public static volatile String cameraRecoveryIp;
+"""
+s = rr(s, field, field_new, "camera recovery fields")
+
+marker = "    public static boolean requestBleMicProbe(long durationMs) {\n"
+methods = """    public static boolean requestCameraRecoveryAfterMic() {
+        MainActivityV03 instance = activeInstance;
+        if (instance == null || !instance.bleReady) return false;
+        instance.recoverCameraAfterMic();
+        return true;
+    }
+
+    public static boolean consumeCameraRecoveryReady() {
+        if (!cameraRecoveryReady) return false;
+        cameraRecoveryReady = false;
+        return true;
+    }
+
+    private void recoverCameraAfterMic() {
+        if (!bleReady) {
+            log("MIC->CAMERA recovery blocked: BLE channel is not ready");
+            return;
+        }
+        cameraRecoveryRequested = true;
+        cameraRecoveryReady = false;
+        cameraRecoveryIp = null;
+        oneTapLiveRequested = true;
+        oneTapLaunchInProgress = false;
+        oneTapRearmSent = false;
+        log("MIC->CAMERA recovery: rebuilding preview -> P2P -> current IP -> /ch0 before RTSP restart");
+
+        Runnable restart = () -> {
+            resetP2pState();
+            if (!bleReady) {
+                cameraRecoveryRequested = false;
+                log("MIC->CAMERA recovery aborted: BLE dropped before preview re-arm");
+                return;
+            }
+            startLiveTest();
+        };
+
+        if (p2pManager == null || p2pChannel == null) {
+            main.post(restart);
+            return;
+        }
+        p2pManager.removeGroup(p2pChannel, new WifiP2pManager.ActionListener() {
+            @Override public void onSuccess() {
+                log("MIC->CAMERA recovery: stale P2P group removed");
+                main.postDelayed(restart, 300L);
+            }
+            @Override public void onFailure(int reason) {
+                log("MIC->CAMERA recovery: removeGroup=" + p2pReason(reason)
+                        + " (" + reason + "); continuing with clean state");
+                main.postDelayed(restart, 300L);
+            }
+        });
+    }
+
+"""
+s = rr(s, marker, methods + marker, "camera recovery methods")
+
+launch_marker = """        log("ONE-TAP /ch0 READY: " + reason);
+        log("ONE-TAP launching raw RTP/H.264 decoder with AUTO_START=true");
+"""
+launch_new = """        if (cameraRecoveryRequested) {
+            cameraRecoveryRequested = false;
+            cameraRecoveryIp = glassesIp;
+            cameraRecoveryReady = true;
+            oneTapLiveRequested = false;
+            oneTapLaunchInProgress = false;
+            log("MIC->CAMERA recovery READY: P2P route and /ch0 DESCRIBE confirmed at "
+                    + (cameraRecoveryIp == null ? "unknown" : cameraRecoveryIp));
+            status("LIVE recovery ready; returning control to video session");
+            return;
+        }
+        log("ONE-TAP /ch0 READY: " + reason);
+        log("ONE-TAP launching raw RTP/H.264 decoder with AUTO_START=true");
+"""
+s = rr(s, launch_marker, launch_new, "recovery ready gate")
+p.write_text(s)
+
+print("v2.0 main recovery patch complete")
