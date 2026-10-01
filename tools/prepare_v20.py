@@ -186,5 +186,19 @@ new_recovery = """                    micTransitionExpected = false;
 """
 r = rr(r, old_recovery, new_recovery, "full camera recovery")
 
+marker = "    private void startMicCapture(long durationMs) {\n"
+helpers = """    private void preserveGoodSessionSummary() {
+        if (!firstRendered || decodedOutputCount <= 0) return;
+        long now = System.currentTimeMillis();
+        double seconds = streamStartMs > 0L ? Math.max(0.001, (now - streamStartMs) / 1000.0) : 0.0;
+        double fps = seconds > 0.0 ? decodedOutputCount / seconds : 0.0;
+        previousGoodSession = String.format(Locale.US,
+                "rendered=%s duration=%.1fs RTP=%d AU=%d decoded=%d avgFPS=%.1f",
+                firstRendered, seconds, rtpPacketCount, accessUnitCount, decodedOutputCount, fps);
+    }
+
+"""
+r = rr(r, marker, helpers + marker, "preserve good-session helper")
+
 p.write_text(r)
-print("v2.0 recovery trigger preparation complete")
+print("v2.0 good-session preservation preparation complete")
