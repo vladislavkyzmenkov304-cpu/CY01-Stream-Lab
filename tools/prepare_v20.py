@@ -125,5 +125,47 @@ field_new = field + """    private long lastVideoRtpArrivalMs;
 """
 r = rr(r, field, field_new, "smoothness fields")
 
+reset = "        lastStatsDecodedCount = 0L;\n"
+reset_new = reset + """        lastVideoRtpArrivalMs = 0L;
+        maxVideoRtpGapMs = 0L;
+        videoRtpGapOver100Count = 0L;
+        lastRenderedFrameMs = 0L;
+        maxRenderedFrameGapMs = 0L;
+        renderedGapOver100Count = 0L;
+        renderedStallOver250Count = 0L;
+"""
+r = rr(r, reset, reset_new, "smoothness reset")
+
+rtp_marker = """        rtpPacketCount++;
+        rtpPayloadByteCount += (end - off);
+"""
+rtp_new = """        long rtpArrivalMs = System.currentTimeMillis();
+        if (lastVideoRtpArrivalMs > 0L) {
+            long gap = Math.max(0L, rtpArrivalMs - lastVideoRtpArrivalMs);
+            if (gap > maxVideoRtpGapMs) maxVideoRtpGapMs = gap;
+            if (gap >= 100L) videoRtpGapOver100Count++;
+        }
+        lastVideoRtpArrivalMs = rtpArrivalMs;
+        rtpPacketCount++;
+        rtpPayloadByteCount += (end - off);
+"""
+r = rr(r, rtp_marker, rtp_new, "RTP gap metrics")
+
+render_marker = """            codec.setOnFrameRenderedListener((mc, presentationTimeUs, nanoTime) -> {
+                if (!firstRendered) {
+"""
+render_new = """            codec.setOnFrameRenderedListener((mc, presentationTimeUs, nanoTime) -> {
+                long renderedNow = System.currentTimeMillis();
+                if (lastRenderedFrameMs > 0L) {
+                    long gap = Math.max(0L, renderedNow - lastRenderedFrameMs);
+                    if (gap > maxRenderedFrameGapMs) maxRenderedFrameGapMs = gap;
+                    if (gap >= 100L) renderedGapOver100Count++;
+                    if (gap >= 250L) renderedStallOver250Count++;
+                }
+                lastRenderedFrameMs = renderedNow;
+                if (!firstRendered) {
+"""
+r = rr(r, render_marker, render_new, "render gap metrics")
+
 p.write_text(r)
-print("v2.0 core preparation complete")
+print("v2.0 smoothness metrics preparation complete")
