@@ -104,4 +104,26 @@ launch_new = """        if (cameraRecoveryRequested) {
 s = rr(s, launch_marker, launch_new, "recovery ready gate")
 p.write_text(s)
 
-print("v2.0 main recovery patch complete")
+p = Path("app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java")
+r = p.read_text()
+r = r.replace("CY01 LIVE v1.9 started", "CY01 LIVE v2.0 started")
+r = r.replace("CY01 LIVE VIDEO v1.9", "CY01 LIVE VIDEO v2.0")
+r = r.replace("CY01StreamLab-Raw/1.9", "CY01StreamLab-Raw/2.0")
+r = r.replace("CY01 LIVE v1.9 compact report", "CY01 LIVE v2.0 compact report")
+r = r.replace("MIC TEST v1.9:", "MIC TEST v2.0:")
+
+field = "    private long lastStatsDecodedCount;\n"
+field_new = field + """    private long lastVideoRtpArrivalMs;
+    private long maxVideoRtpGapMs;
+    private long videoRtpGapOver100Count;
+    private long lastRenderedFrameMs;
+    private long maxRenderedFrameGapMs;
+    private long renderedGapOver100Count;
+    private long renderedStallOver250Count;
+    private String previousGoodSession = "";
+    private boolean cameraRecoveryPollActive;
+"""
+r = rr(r, field, field_new, "smoothness fields")
+
+p.write_text(r)
+print("v2.0 core preparation complete")
