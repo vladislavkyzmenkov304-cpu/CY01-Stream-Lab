@@ -22,14 +22,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v1.9 BLE microphone diagnostics
-        run: python3 tools/prepare_v19.py
+      - name: Prepare v2.0 recovery diagnostics
+        run: |
+          python3 tools/prepare_v19.py
+          python3 tools/prepare_v20.py
 
-      - name: Verify v1.9 source preparation
+      - name: Verify v2.0 source preparation
         run: |
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
-          grep -n "v1.9 started\|BLE MIC TEST\|bleMicGattQueued" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "CY01 LIVE v1.9\|SETUP track2 AUDIO\|START MIC TEST\|bleGattQueued\|audioRTP\|DECODER RECOVERY" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
+          grep -n "v2.0 started\|BLE MIC TEST\|bleMicGattQueued" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
+          grep -n "CY01 LIVE v2.0\|SETUP track2 AUDIO\|START MIC TEST\|bleGattQueued\|audioRTP\|DECODER RECOVERY" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
           grep -n "RawRtspH264Activity\|RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
       - name: Set up Java 17
@@ -78,8 +80,8 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab19
-            adb shell am start -W -n com.vk.cy01streamlab19/com.vk.cy01streamlab.MainActivityV03
+            adb shell pm path com.vk.cy01streamlab20
+            adb shell am start -W -n com.vk.cy01streamlab20/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
 
@@ -87,6 +89,6 @@ jobs:
         if: always() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-live-v1.9.0-ble-microphone-diagnostics-android16-tested
+          name: cy01-live-v2.0.0-recovery-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
