@@ -167,5 +167,24 @@ render_new = """            codec.setOnFrameRenderedListener((mc, presentationTi
 """
 r = rr(r, render_marker, render_new, "render gap metrics")
 
+old_recovery = """                    micTransitionExpected = false;
+                    main.postDelayed(() -> {
+                        if (!running) {
+                            log("MIC TEST: attempting automatic RTSP camera recovery after BLE preview restore");
+                            startRawTest();
+                        }
+                    }, 1800L);
+"""
+new_recovery = """                    micTransitionExpected = false;
+                    boolean recoveryRequested = MainActivityV03.requestCameraRecoveryAfterMic();
+                    log("MIC TEST: full camera recovery requested=" + recoveryRequested);
+                    if (recoveryRequested) {
+                        startCameraRecoveryPoll();
+                    } else {
+                        status("Camera recovery unavailable; copy report.");
+                    }
+"""
+r = rr(r, old_recovery, new_recovery, "full camera recovery")
+
 p.write_text(r)
-print("v2.0 smoothness metrics preparation complete")
+print("v2.0 recovery trigger preparation complete")
