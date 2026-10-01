@@ -61,6 +61,7 @@ methods = """    public static boolean requestCameraRecoveryAfterMic() {
                 log("MIC->CAMERA recovery aborted: BLE dropped before preview re-arm");
                 return;
             }
+            cameraRecoveryRequested = false;
             startLiveTest();
         };
 
