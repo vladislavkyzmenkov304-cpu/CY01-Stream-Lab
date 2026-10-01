@@ -122,6 +122,7 @@ field_new = field + """    private long lastVideoRtpArrivalMs;
     private long renderedStallOver250Count;
     private String previousGoodSession = "";
     private boolean cameraRecoveryPollActive;
+    private long cameraRecoveryDeadlineMs;
 """
 r = rr(r, field, field_new, "smoothness fields")
 
