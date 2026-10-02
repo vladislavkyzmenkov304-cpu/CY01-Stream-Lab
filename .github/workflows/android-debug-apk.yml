@@ -22,16 +22,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v2.1 RTSP framing and recovery
+      - name: Prepare v2.2 RTSP framing and recovery
         run: |
           python3 tools/prepare_v19.py
-          python3 tools/prepare_v21.py
+          python3 tools/prepare_v22.py
 
-      - name: Verify v2.1 source preparation
+      - name: Verify v2.2 source preparation
         run: |
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
-          grep -n "v2.1 started\|MIC->CAMERA recovery\|RTSP_HOST" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "CY01 LIVE v2.1\|RTSP response race\|pollCameraRecoveryReady\|smooth rtpMaxGapMs\|SETUP track2 AUDIO\|START MIC TEST" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
+          grep -n "v2.2 started\|MIC->CAMERA recovery\|RTSP_HOST" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
+          grep -n "CY01 LIVE v2.2\|RTSP response race\|pollCameraRecoveryReady\|smooth rtpMaxGapMs\|SETUP track2 AUDIO\|START MIC TEST" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
           grep -n "RawRtspH264Activity\|RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
       - name: Set up Java 17
@@ -80,8 +80,8 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab21
-            adb shell am start -W -n com.vk.cy01streamlab21/com.vk.cy01streamlab.MainActivityV03
+            adb shell pm path com.vk.cy01streamlab22
+            adb shell am start -W -n com.vk.cy01streamlab22/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
 
@@ -89,6 +89,6 @@ jobs:
         if: always() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-live-v2.1.0-rtsp-race-recovery-android16-tested
+          name: cy01-live-v2.2.0-rtsp-race-recovery-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
