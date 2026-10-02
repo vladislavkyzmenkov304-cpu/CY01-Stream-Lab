@@ -17,14 +17,8 @@ p=Path("app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java"); s=p.read_
 s=s.replace("CY01 Live v2.1 started","CY01 Live v2.2 started").replace("CY01 Live v2.1","CY01 Live v2.2").replace("CY01StreamLab-OneTap/2.1","CY01StreamLab-OneTap/2.2")
 s=s.replace("v2.1: no explicit Android Network binding","v2.2: no explicit Android Network binding").replace("v2.1 will NOT bind sockets","v2.2 will NOT bind sockets")
 
-# Critical v2.1 bug: recovery request was cleared before startLiveTest, so /ch0 ready gate could never hand control back.
-old="""            cameraRecoveryRequested = false;
-            startLiveTest();
-"""
-new="""            log("MIC->CAMERA recovery: keeping recovery request asserted through preview/P2P rebuild");
-            startLiveTest();
-"""
-s=rr(s,old,new,"recovery state")
+# prepare_v21 already keeps cameraRecoveryRequested asserted through the P2P rebuild.
+# Do not patch that state a second time here.
 
 # Single-shot mic completion: ignore stale/manual duplicate stop calls after the first completion.
 marker="""    private void stopBleMicProbe() {
