@@ -22,10 +22,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v2.3 RTSP framing and recovery
+      - name: Prepare v2.3 smoother decoder feed
         run: |
           python3 tools/prepare_v19.py
-          python3 tools/prepare_v23.py
+          python3 tools/prepare_v23_ci.py
 
       - name: Verify v2.3 source preparation
         run: |
