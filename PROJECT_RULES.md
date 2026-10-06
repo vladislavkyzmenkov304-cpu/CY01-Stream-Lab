@@ -17,3 +17,15 @@
 - If an engineering blocker can be safely resolved from repository evidence, fix it and continue instead of waiting.
 - Ask the owner when a decision, external credential, destructive action, or physical-device action is actually required.
 - Keep diagnostic reports truthful: preserve successful-session metrics separately from later recovery-attempt failures.
+
+
+## Product target: AI-assisted uninterrupted LIVE
+- The end product is not an AI assistant that stops LIVE to take a photo. AI interaction must be designed as a parallel path over an uninterrupted live video session.
+- While LIVE continues to viewers, a glasses button or voice command may invoke the assistant. The app should reuse the current stream and select one or more recent frames from a rolling buffer for visual context, rather than interrupting the camera merely to capture a still image.
+- The user's spoken question plus selected live-frame context may be sent to an AI service/model. AI processing must not block, restart, or noticeably interrupt the broadcast video path.
+- AI voice responses should support at least two product modes: private playback to the wearer and broadcast playback mixed into the LIVE audio so viewers can hear the assistant as a virtual co-host.
+- Architecture should allow context-dependent sampling: a recent high-quality frame for object/text questions, or a short sequence of recent frames when motion/action context is required. Continuous analysis of every video frame is not a requirement.
+- Target hands-free interactions include questions about visible objects, signs/text, places, how to use or repair something in view, contextual advice, and real-time translation.
+- Future controls should support invoking LIVE/AI from glasses buttons and/or voice without taking out the phone.
+- This target makes uninterrupted simultaneous video + usable voice/audio a product requirement. The current diagnostic camera/mic-exclusive switching is temporary research behavior and must not become the final commercial UX.
+- Preserve this product target when changing transport, audio, buffering, AI, streaming, or subscription architecture.
