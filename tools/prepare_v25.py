@@ -3,7 +3,7 @@ import runpy
 
 # v2.5: field fix for RTSP-over-TCP parser. CY01 may emit ASCII RTSP control
 # messages between interleaved RTP frames; v2.4 treated the first 'R'/'M' as fatal.
-runpy.run_path("tools/prepare_v24_impl.py", run_name="__main__")
+runpy.run_path("tools/prepare_v24_ci.py", run_name="__main__")
 
 def rr(t,o,n,l):
     if o not in t: raise SystemExit(l+" not found")
