@@ -55,5 +55,35 @@ new='''                if (marker != '$') {
                 }
 '''
 r=rr(r,old,new,"interleaved control parser")
+
+# Preserve RTSP interleaved header bytes across socket timeouts. A timeout after
+# consuming channel/length previously left the parser one or two bytes off.
+r = rr(r,
+'''                int channel = in.read();
+                int hi = in.read();
+                int lo = in.read();
+                if (channel < 0 || hi < 0 || lo < 0) throw new EOFException("EOF in interleaved header");
+                int length = (hi << 8) | lo;
+''',
+'''                byte[] frameHeader = readExactly(in, 3);
+                int channel = frameHeader[0] & 0xff;
+                int length = ((frameHeader[1] & 0xff) << 8) | (frameHeader[2] & 0xff);
+''',
+"timeout-safe interleaved frame header")
+
+r = rr(r,
+'''                int channel = in.read();
+                int hi = in.read();
+                int lo = in.read();
+                if (channel < 0 || hi < 0 || lo < 0) {
+                    throw new EOFException("EOF in early interleaved RTP header");
+                }
+                int length = (hi << 8) | lo;
+''',
+'''                byte[] earlyFrameHeader = readExactly(in, 3);
+                int channel = earlyFrameHeader[0] & 0xff;
+                int length = ((earlyFrameHeader[1] & 0xff) << 8) | (earlyFrameHeader[2] & 0xff);
+''',
+"timeout-safe early RTP frame header")
 p.write_text(r)
-print("v2.5 prepared: RTSP control/data multiplex parser")
+print("v2.5 prepared: RTSP control/data multiplex parser; timeout-safe frame headers")
