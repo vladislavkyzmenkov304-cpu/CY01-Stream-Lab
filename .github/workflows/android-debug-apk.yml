@@ -22,15 +22,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v2.4 transport and microphone handoff
+      - name: Prepare v2.5 transport and microphone handoff
         run: |
-          python3 tools/prepare_v24_ci.py
+          python3 tools/prepare_v25.py
 
-      - name: Verify v2.4 source preparation
+      - name: Verify v2.5 source preparation
         run: |
           grep -n "applicationId\|versionCode\|versionName" app/build.gradle
-          grep -n "v2.4 started\|BLE MIC EXCLUSIVE\|MIC->CAMERA recovery\|RTSP_HOST" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
-          grep -n "CY01 LIVE v2.4\|partial-frame timeout preserved\|framing lost\|MICROPHONE MODE\|transport partialTimeouts\|pollCameraRecoveryReady" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
+          grep -n "v2.5 started\|BLE MIC EXCLUSIVE\|MIC->CAMERA recovery\|RTSP_HOST" app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java
+          grep -n "CY01 LIVE v2.5\|partial-frame timeout preserved\|framing lost\|MICROPHONE MODE\|transport partialTimeouts\|pollCameraRecoveryReady" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
           ! grep -q "RTSP interleaved resync: skipped binary/non-framed bytes" app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java
           grep -n "RawRtspH264Activity\|RtspPlayerActivity" app/src/main/AndroidManifest.xml
 
@@ -80,8 +80,8 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.vk.cy01streamlab24
-            adb shell am start -W -n com.vk.cy01streamlab24/com.vk.cy01streamlab.MainActivityV03
+            adb shell pm path com.vk.cy01streamlab25
+            adb shell am start -W -n com.vk.cy01streamlab25/com.vk.cy01streamlab.MainActivityV03
             sleep 2
             adb shell dumpsys activity activities | grep -m1 'MainActivityV03'
 
@@ -89,6 +89,6 @@ jobs:
         if: always() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: cy01-live-v2.4.0-transport-mic-handoff-android16-tested
+          name: cy01-live-v2.5.0-transport-mic-handoff-android16-tested
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
