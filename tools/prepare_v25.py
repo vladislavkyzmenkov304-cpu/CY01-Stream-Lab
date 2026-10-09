@@ -91,10 +91,126 @@ r = rr(r,
 # complete message, leaving the TCP stream misaligned for subsequent RTP.
 r = rr(r,
 '''                if (marker != '
+                    if (marker == 'R' || marker == 'S' || marker == 'O' || marker == 'G' || marker == 'M') {
+''',
+'''                if (marker != '
+) {
+                    if (marker == '\r' || marker == '\n') continue;
+                    if (marker == 'R' || marker == 'S' || marker == 'O' || marker == 'G' || marker == 'M') {
+''',
+"skip interleaved RTSP keepalive blank lines")
+
+r = rr(r,
+'''                        String controlText = control.toString(StandardCharsets.US_ASCII.name());
+''',
+'''                        if (control.size() >= 32768) {
+                            throw new IllegalStateException("Post-PLAY RTSP control header exceeds 32768 bytes");
+                        }
+                        String controlText = control.toString(StandardCharsets.US_ASCII.name());
+''',
+"reject truncated RTSP control header")
+
+r = rr(r,
+'''                        log("RTSP interleaved control message: " + firstLine);
+                        continue;
+''',
+'''                        if (!(firstLine.startsWith("RTSP/")
+                                || firstLine.startsWith("OPTIONS ")
+                                || firstLine.startsWith("GET_PARAMETER ")
+                                || firstLine.startsWith("SET_PARAMETER ")
+                                || firstLine.startsWith("REDIRECT ")
+                                || firstLine.startsWith("ANNOUNCE ")
+                                || firstLine.startsWith("RECORD ")
+                                || firstLine.startsWith("PLAY_NOTIFY "))) {
+                            framingLossCount++;
+                            throw new IllegalStateException("Non-RTSP post-PLAY data at frame boundary: "
+                                    + firstLine.substring(0, Math.min(firstLine.length(), 96)));
+                        }
+                        int controlBodyLength = 0;
+                        for (String controlLine : controlText.split("\\r\\n")) {
+                            int colon = controlLine.indexOf(':');
+                            if (colon > 0 && controlLine.substring(0, colon).trim()
+                                    .equalsIgnoreCase("Content-Length")) {
+                                try {
+                                    controlBodyLength = Integer.parseInt(controlLine.substring(colon + 1).trim());
+                                } catch (NumberFormatException invalid) {
+                                    throw new IllegalStateException("Invalid RTSP control Content-Length", invalid);
+                                }
+                            }
+                        }
+                        if (controlBodyLength < 0 || controlBodyLength > 1048576) {
+                            throw new IllegalStateException("RTSP control body out of bounds: " + controlBodyLength);
+                        }
+                        if (controlBodyLength != 0) readExactly(in, controlBodyLength);
+                        log("RTSP interleaved control message: " + firstLine
+                                + " bodyBytes=" + controlBodyLength);
+                        continue;
+''',
+"consume control RTSP body and validate start line")
+
+
+p.write_text(r)
+print("v2.5 prepared: RTSP control/data multiplex parser; timeout-safe frame headers")
 ) {
                     if (marker == 'R' || marker == 'S' || marker == 'O' || marker == 'G' || marker == 'M') {
 ''',
 '''                if (marker != '
+                    if (marker == '\r' || marker == '\n') continue;
+                    if (marker == 'R' || marker == 'S' || marker == 'O' || marker == 'G' || marker == 'M') {
+''',
+"skip interleaved RTSP keepalive blank lines")
+
+r = rr(r,
+'''                        String controlText = control.toString(StandardCharsets.US_ASCII.name());
+''',
+'''                        if (control.size() >= 32768) {
+                            throw new IllegalStateException("Post-PLAY RTSP control header exceeds 32768 bytes");
+                        }
+                        String controlText = control.toString(StandardCharsets.US_ASCII.name());
+''',
+"reject truncated RTSP control header")
+
+r = rr(r,
+'''                        log("RTSP interleaved control message: " + firstLine);
+                        continue;
+''',
+'''                        if (!(firstLine.startsWith("RTSP/")
+                                || firstLine.startsWith("OPTIONS ")
+                                || firstLine.startsWith("GET_PARAMETER ")
+                                || firstLine.startsWith("SET_PARAMETER ")
+                                || firstLine.startsWith("REDIRECT ")
+                                || firstLine.startsWith("ANNOUNCE ")
+                                || firstLine.startsWith("RECORD ")
+                                || firstLine.startsWith("PLAY_NOTIFY "))) {
+                            framingLossCount++;
+                            throw new IllegalStateException("Non-RTSP post-PLAY data at frame boundary: "
+                                    + firstLine.substring(0, Math.min(firstLine.length(), 96)));
+                        }
+                        int controlBodyLength = 0;
+                        for (String controlLine : controlText.split("\\r\\n")) {
+                            int colon = controlLine.indexOf(':');
+                            if (colon > 0 && controlLine.substring(0, colon).trim()
+                                    .equalsIgnoreCase("Content-Length")) {
+                                try {
+                                    controlBodyLength = Integer.parseInt(controlLine.substring(colon + 1).trim());
+                                } catch (NumberFormatException invalid) {
+                                    throw new IllegalStateException("Invalid RTSP control Content-Length", invalid);
+                                }
+                            }
+                        }
+                        if (controlBodyLength < 0 || controlBodyLength > 1048576) {
+                            throw new IllegalStateException("RTSP control body out of bounds: " + controlBodyLength);
+                        }
+                        if (controlBodyLength != 0) readExactly(in, controlBodyLength);
+                        log("RTSP interleaved control message: " + firstLine
+                                + " bodyBytes=" + controlBodyLength);
+                        continue;
+''',
+"consume control RTSP body and validate start line")
+
+
+p.write_text(r)
+print("v2.5 prepared: RTSP control/data multiplex parser; timeout-safe frame headers")
 ) {
                     if (marker == '\r' || marker == '\n') continue;
                     if (marker == 'R' || marker == 'S' || marker == 'O' || marker == 'G' || marker == 'M') {
