@@ -275,6 +275,11 @@ p.write_text(r)
 
 print('v2.6.0 prepared: explicit Bluetooth microphone route independent of BLE preview control')
 
+# Measure actual render timestamps, not delayed/batched UI callback arrival times.
+r=rr(r, '                long renderedNow = System.currentTimeMillis();', '                if (mc != decoder || !running) return;\n                long renderedNow = nanoTime / 1_000_000L;', 'actual frame render timestamps')
+r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summary += "renderGapClock=MediaCodec.nanoTime\\n";\n        String result = summary + diagnosticSnapshot();', 'render clock report')
+p.write_text(r)
+
 # Exercise the actual generated parser with synthetic byte streams in Cloud.
 # No device identifiers or field payloads enter this public fixture.
 import shutil, subprocess, tempfile
