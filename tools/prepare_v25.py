@@ -319,6 +319,40 @@ p.write_text(r)
 r=rr(r, '            pump=new BufferedSocketInput(socket.getInputStream());\n            socketPump=pump;\n            InputStream in = new java.io.BufferedInputStream(pump, 65536);', '            pump=new BufferedSocketInput(socket.getInputStream(),512*1024,20);\n            socketPump=pump;\n            // Keep draining ready codec outputs even between incoming RTP bursts.\n            InputStream polled=new java.io.FilterInputStream(pump) {\n                @Override public int read(byte[] bytes,int offset,int length) throws java.io.IOException {\n                    long deadline=System.nanoTime()+2_500_000_000L;\n                    while(true) {\n                        try { return in.read(bytes,offset,length); }\n                        catch(SocketTimeoutException idle) {\n                            if(!running)throw new java.io.IOException("Session stopped",idle);\n                            drainDecoder();\n                            if(System.nanoTime()>=deadline)throw idle;\n                        }\n                    }\n                }\n                @Override public int read() throws java.io.IOException {\n                    byte[] one=new byte[1]; return read(one,0,1)<0 ? -1 : one[0]&255;\n                }\n            };\n            InputStream in = new java.io.BufferedInputStream(polled, 65536);', "drain codec during short network idle intervals")
 p.write_text(r)
 
+# v2.6.4: LIVE intent survives transport failures; STOP invalidates pending work.
+r=rr(r, '    private int transportRetries;', '    private int transportRetries;\n    private volatile boolean liveRequested;\n    private final LiveRetryPolicy retryPolicy=new LiveRetryPolicy();\n    private long liveStartElapsedMs, liveStopElapsedMs, completedRtp, completedAu, completedDecoded, completedSessions, bestSessionMs;\n    private final StringBuilder sessionHistory=new StringBuilder();', 'endurance fields')
+r=rr(r, '        transportRetries = 0;\n        startRawSession();', '        transportRetries = 0;\n        liveRequested=true; retryPolicy.reset();\n        liveStartElapsedMs=android.os.SystemClock.elapsedRealtime(); liveStopElapsedMs=0;\n        completedRtp=completedAu=completedDecoded=completedSessions=bestSessionMs=0;\n        previousGoodSession=""; sessionHistory.setLength(0);\n        startRawSession();', 'new LIVE totals')
+r=rr(r, '            if (retryTransport && epoch == stopEpoch && !micTransitionExpected) {', '            completedRtp+=rtpPacketCount; completedAu+=accessUnitCount; completedDecoded+=decodedOutputCount; completedSessions++;\n            preserveGoodSessionSummary();\n            String event="session="+sessionId+" durationMs="+(streamEndMs-streamStartMs)+" decoded="+decodedOutputCount+" framingLoss="+framingLossCount+" failure="+(retryTransport ? previousTransportFailure : "none")+"\\n";\n            synchronized(sessionHistory) {\n                sessionHistory.append(event);\n                while(sessionHistory.length()>6000) { int cut=sessionHistory.indexOf("\\n"); if(cut<0)break; sessionHistory.delete(0,cut+1); }\n            }\n            if (retryTransport && liveRequested && epoch == stopEpoch && !micTransitionExpected) {', 'completed sessions survive resets')
+old='''                preserveGoodSessionSummary();
+                if (transportRetries < 2) {
+                    transportRetries++;
+                    log("RTSP reconnect scheduled: attempt=" + transportRetries + "/2; previous=" + previousTransportFailure);
+                    main.postDelayed(() -> {
+                        if (epoch == stopEpoch && !running && surfaceReady && !isFinishing()) {
+                            startRawSession();
+                        }
+                    }, 1000L * transportRetries);
+                } else {
+                    status("Соединение потеряно. Две попытки восстановления завершились ошибкой.");
+                }'''
+new='''                transportRetries++;
+                long delay=retryPolicy.nextDelayMs(streamEndMs-streamStartMs,firstRendered);
+                log("RTSP reconnect scheduled: attempt="+transportRetries+" delayMs="+delay+"; previous="+previousTransportFailure);
+                status("Видео прервано. Восстановление через "+(delay/1000)+" с. Попытка "+transportRetries);
+                main.postDelayed(() -> {
+                    if (liveRequested && epoch == stopEpoch && !running && surfaceReady && !isFinishing()) {
+                        startRawSession();
+                    }
+                },delay);'''
+r=rr(r,old,new,'persistent LIVE recovery')
+r=rr(r, '    private void stopRawTest() {', '    private void stopRawTest() {\n        liveRequested=false;\n        liveStopElapsedMs=android.os.SystemClock.elapsedRealtime();', 'STOP cancels recovery')
+r=rr(r, '        previousGoodSession = String.format(Locale.US,', '        long candidateMs=Math.max(0L,now-streamStartMs);\n        if(candidateMs<bestSessionMs)return;\n        bestSessionMs=candidateMs;\n        previousGoodSession = String.format(Locale.US,', 'preserve longest rendered session')
+r=rr(r, '        String result = summary + diagnosticSnapshot();', '        long liveNow=liveStopElapsedMs>0 ? liveStopElapsedMs : android.os.SystemClock.elapsedRealtime();\n        summary+="liveRequested="+liveRequested+" liveElapsedMs="+(liveStartElapsedMs==0 ? 0 : liveNow-liveStartElapsedMs)+" completedSessions="+completedSessions+" totalRTP="+(completedRtp+(running ? rtpPacketCount : 0))+" totalAU="+(completedAu+(running ? accessUnitCount : 0))+" totalDecoded="+(completedDecoded+(running ? decodedOutputCount : 0))+"\\n";\n        synchronized(sessionHistory) { summary+="SESSION HISTORY (completed):\\n"+sessionHistory; }\n        String result = summary + diagnosticSnapshot();', 'endurance report')
+r=r.replace('2.6.3','2.6.4')
+p.write_text(r)
+g=Path('app/build.gradle');g.write_text(g.read_text().replace('versionCode 2603','versionCode 2604').replace('2.6.3','2.6.4'))
+m=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');m.write_text(m.read_text().replace('2.6.3','2.6.4'))
+
 # Permit the requested endurance run without the old 30-minute LIVE auto-stop.
 mainFile=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java')
 mainSource=mainFile.read_text()
@@ -388,3 +422,49 @@ if shutil.which('javac'):
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/BufferedSocketInput.java','app/src/main/java/com/vk/cy01streamlab/VideoPresentationClock.java','tools/VideoPipelineCheck.java'],check=True)
         subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.VideoPipelineCheck'],check=True)
+
+if shutil.which('javac'):
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/LiveRetryPolicy.java','tools/LiveRetryPolicyCheck.java'],check=True)
+        subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.LiveRetryPolicyCheck'],check=True)
+
+# Compile the actual generated retry scheduling block with a deterministic Handler.
+if shutil.which('javac'):
+    begin=r.index('            if (retryTransport && liveRequested')
+    end=r.index('\n        }\n    }',begin)
+    scheduling=r[begin:end]
+    harness='''package com.vk.cy01streamlab;
+public class LiveSchedulingCheck {
+ boolean liveRequested=true,running=false,surfaceReady=true,micTransitionExpected=false,firstRendered=true,finishing=false;
+ int stopEpoch=1,transportRetries,starts; long streamEndMs=12400,streamStartMs=0;
+ String previousTransportFailure="fixture";
+ LiveRetryPolicy retryPolicy=new LiveRetryPolicy();
+ static class Handler { Runnable task; void postDelayed(Runnable r,long ms){task=r;} }
+ Handler main=new Handler();
+ void log(String s){} void status(String s){} boolean isFinishing(){return finishing;}
+ void startRawSession(){starts++;running=true;stopEpoch++;}
+ void failed(boolean retryTransport,int epoch) {
+'''+scheduling+'''
+ }
+ public static void main(String[] args) {
+  LiveSchedulingCheck c=new LiveSchedulingCheck();
+  for(int i=0;i<20;i++){c.running=false;c.failed(true,c.stopEpoch);c.main.task.run();}
+  if(c.starts!=20)throw new AssertionError("lifetime quota");
+  c=new LiveSchedulingCheck();c.failed(true,1);c.liveRequested=false;c.stopEpoch++;c.main.task.run();
+  if(c.starts!=0)throw new AssertionError("STOP resurrected LIVE");
+  c=new LiveSchedulingCheck();c.failed(true,1);c.stopEpoch++;c.main.task.run();
+  if(c.starts!=0)throw new AssertionError("stale epoch restarted");
+  c=new LiveSchedulingCheck();c.failed(true,1);c.surfaceReady=false;c.main.task.run();
+  if(c.starts!=0)throw new AssertionError("surface destroyed");
+  c=new LiveSchedulingCheck();c.failed(false,1);
+  if(c.main.task!=null)throw new AssertionError("clean STOP retried");
+  c=new LiveSchedulingCheck();c.failed(true,1);c.finishing=true;c.main.task.run();
+  if(c.starts!=0)throw new AssertionError("closed activity restarted");
+  System.out.println("LIVE scheduling PASS: >2 retries, STOP, stale epoch, surface loss, clean stop, closing activity");
+ }
+}
+'''
+    with tempfile.TemporaryDirectory() as tmp:
+        f=Path(tmp)/'LiveSchedulingCheck.java';f.write_text(harness)
+        subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/LiveRetryPolicy.java',str(f)],check=True)
+        subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.LiveSchedulingCheck'],check=True)
