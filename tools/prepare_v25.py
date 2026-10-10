@@ -224,6 +224,57 @@ r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summ
 p.write_text(r)
 print('v2.5.2 prepared: LIVE-safe mic guard, bounded RTSP reconnect, frozen end statistics')
 
+# v2.6.0: use Android's Bluetooth communication input without BLE camera-mode commands.
+g=Path('app/build.gradle');s=g.read_text().replace('versionCode 2502','versionCode 2600').replace("versionName '2.5.2'", "versionName '2.6.0'");g.write_text(s)
+p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');s=p.read_text().replace('CY01 Live v2.5.2','CY01 Live v2.6.0');p.write_text(s)
+p=Path('app/src/main/AndroidManifest.xml');s=p.read_text();s=s.replace('    <application','    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n\n    <application',1);p.write_text(s)
+p=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java');r=p.read_text()
+r=r.replace('CY01 LIVE v2.5.2','CY01 LIVE v2.6.0').replace('CY01 LIVE VIDEO v2.5','CY01 LIVE VIDEO v2.6.0')
+r=rr(r,'    private TextView statusView;', '    private GlassesAudioInput glassesAudio;\n    private TextView statusView;', 'audio input field')
+r=rr(r,'        buildUi();','        buildUi();\n        glassesAudio = new GlassesAudioInput(this, text -> { log(text); status(text); });','create audio controller')
+a=r.index('    private void startCombinedMicTest() {');b=r.index('    private void pollCameraRecoveryReady()',a)
+r=r[:a]+'''    private void startCombinedMicTest() {
+        glassesAudio.toggle();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code == GlassesAudioInput.PERMISSION_REQUEST) {
+            boolean granted = results.length > 0;
+            for (int result : results) granted &= result == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (granted && !isFinishing()) glassesAudio.toggle();
+            else status("Для микрофона нужно разрешение на запись звука и Bluetooth. Видео продолжает работать.");
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (glassesAudio != null) glassesAudio.stop();
+        super.onStop();
+    }
+
+'''+r[b:]
+r=r.replace('МИКРОФОН — НЕДОСТУПЕН','МИКРОФОН BLUETOOTH — ВКЛ / ВЫКЛ')
+r=r.replace('root.addView(button("PLAY MIC SAMPLE", v -> playMicSample()));','root.addView(button("ПРОСЛУШАТЬ ПОСЛЕДНИЕ 10 СЕКУНД", v -> glassesAudio.playRecent()));')
+r=r.replace('MIC TEST ready: RTSP track2 SETUP succeeded but capture waits for МИКРОФОН BLUETOOTH — ВКЛ / ВЫКЛ', 'Audio: RTSP track2 negotiated; Bluetooth microphone is a separate user-activated route')
+r=r.replace('Видео работает. Микрофон очков пока недоступен.', 'Видео работает. Микрофон можно подключить кнопкой Bluetooth.')
+r=rr(r,'    private void stopRawTest() {','    private void stopRawTest() {\n        if (glassesAudio != null) glassesAudio.stop();','stop audio on explicit video stop')
+r=rr(r,'        String result = summary + diagnosticSnapshot();','        summary += (glassesAudio == null ? "bluetoothMic=not_initialized" : glassesAudio.snapshot()) + "\\n";\n        String result = summary + diagnosticSnapshot();','audio report')
+# Record protocol metadata only, never video payload, at the next framing loss.
+r=rr(r,'    private volatile long streamEndMs;','    private String lastWireFrame = "none";\n    private volatile long streamEndMs;','wire metadata')
+r=rr(r,'        framingLossCount = 0L;','        framingLossCount = 0L;\n        lastWireFrame = "none";','wire metadata reset')
+r=rr(r,'+ Integer.toHexString(marker & 0xFF));','+ Integer.toHexString(marker & 0xFF) + "; previous=" + lastWireFrame);','framing context')
+r=rr(r,'''                byte[] packet = readExactly(in, length);
+                handleInterleavedPacket(channel, packet);''','''                byte[] packet = readExactly(in, length);
+                lastWireFrame = "channel=" + channel + " length=" + length
+                        + (packet.length >= 4 ? " v=" + ((packet[0] & 255) >> 6)
+                        + " pt=" + (packet[1] & 255) + " word2=" + (((packet[2]&255)<<8)|(packet[3]&255)) : " short");
+                handleInterleavedPacket(channel, packet);''','wire frame metadata')
+p.write_text(r)
+
+print('v2.6.0 prepared: explicit Bluetooth microphone route independent of BLE preview control')
+
 # Exercise the actual generated parser with synthetic byte streams in Cloud.
 # No device identifiers or field payloads enter this public fixture.
 import shutil, subprocess, tempfile
@@ -234,7 +285,7 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 public class ParserCheck {
  boolean running=true; long partialFrameTimeoutCount, partialFrameTimeoutBytes, framingLossCount;
- int packets; byte[] last;
+ String lastWireFrame="none"; int packets; byte[] last;
  void log(String s) {} void drainDecoder() {}
  void handleInterleavedPacket(int channel, byte[] bytes) { packets++; last=bytes; }
  static class Feed extends InputStream {
