@@ -224,12 +224,12 @@ r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summ
 p.write_text(r)
 print('v2.5.2 prepared: LIVE-safe mic guard, bounded RTSP reconnect, frozen end statistics')
 
-# v2.6.1: use Android's Bluetooth communication input without BLE camera-mode commands.
-g=Path('app/build.gradle');s=g.read_text().replace('versionCode 2502','versionCode 2601').replace("versionName '2.5.2'", "versionName '2.6.1'");g.write_text(s)
-p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');s=p.read_text().replace('CY01 Live v2.5.2','CY01 Live v2.6.1');p.write_text(s)
+# v2.6.2: use Android's Bluetooth communication input without BLE camera-mode commands.
+g=Path('app/build.gradle');s=g.read_text().replace('versionCode 2502','versionCode 2602').replace("versionName '2.5.2'", "versionName '2.6.2'");g.write_text(s)
+p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');s=p.read_text().replace('CY01 Live v2.5.2','CY01 Live v2.6.2');p.write_text(s)
 p=Path('app/src/main/AndroidManifest.xml');s=p.read_text();s=s.replace('    <application','    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n\n    <application',1);p.write_text(s)
 p=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java');r=p.read_text()
-r=r.replace('CY01 LIVE v2.5.2','CY01 LIVE v2.6.1').replace('CY01 LIVE VIDEO v2.5','CY01 LIVE VIDEO v2.6.1')
+r=r.replace('CY01 LIVE v2.5.2','CY01 LIVE v2.6.2').replace('CY01 LIVE VIDEO v2.5','CY01 LIVE VIDEO v2.6.2')
 r=rr(r,'    private TextView statusView;', '    private GlassesAudioInput glassesAudio;\n    private TextView statusView;', 'audio input field')
 r=rr(r,'        buildUi();','        buildUi();\n        glassesAudio = new GlassesAudioInput(this, text -> { log(text); status(text); });','create audio controller')
 a=r.index('    private void startCombinedMicTest() {');b=r.index('    private void pollCameraRecoveryReady()',a)
@@ -273,24 +273,45 @@ r=rr(r,'''                byte[] packet = readExactly(in, length);
                 handleInterleavedPacket(channel, packet);''','wire frame metadata')
 p.write_text(r)
 
-print('v2.6.1 prepared: explicit Bluetooth microphone route independent of BLE preview control')
+print('v2.6.2 prepared: explicit Bluetooth microphone route independent of BLE preview control')
 
 # Measure actual render timestamps, not delayed/batched UI callback arrival times.
 r=rr(r, '                long renderedNow = System.currentTimeMillis();', '                if (mc != decoder || !running) return;\n                long renderedNow = nanoTime / 1_000_000L;', 'actual frame render timestamps')
 r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summary += "renderGapClock=MediaCodec.nanoTime\\n";\n        String result = summary + diagnosticSnapshot();', 'render clock report')
 p.write_text(r)
 
+# v2.6.2: bounded, validated boundary recovery plus truthful frozen-frame status.
+r=rr(r, 'InputStream in = socket.getInputStream();', 'InputStream in = new java.io.BufferedInputStream(socket.getInputStream(), 65536);', 'buffer socket reads')
+r=rr(r, '    private void readInterleaved(InputStream in) throws Exception {', '    private void readInterleaved(InputStream in) throws Exception {\n        in = new java.io.PushbackInputStream(in, RtpBoundaryRecovery.CAPACITY);', 'recovery replay buffer')
+r=rr(r, '                    throw new IllegalStateException("RTSP interleaved framing lost at marker=0x"', '                    if (recoverFraming(in, marker)) continue;\n                    throw new IllegalStateException("RTSP interleaved framing lost at marker=0x"', 'validated recovery at binary boundary')
+r=rr(r, '    private TextView statusView;', '    private TextView audioStatusView;\n    private TextView statusView;', 'separate audio status')
+r=rr(r, 'text -> { log(text); status(text); }', 'text -> { log(text); audioStatusView.setText(text); }', 'audio must not hide video errors')
+r=rr(r, '        root.addView(statusView);', '        root.addView(statusView);\n        audioStatusView = new TextView(this);\n        audioStatusView.setText("Микрофон выключен");\n        root.addView(audioStatusView);', 'audio status view')
+r=r.replace('ПРОСЛУШАТЬ ПОСЛЕДНИЕ 10 СЕКУНД', 'ПРОСЛУШАТЬ ЗАПИСЬ')
+r=rr(r, '    private String lastWireFrame = "none";', '    private long wireSsrc = -1L, boundaryRecoveries, boundarySkippedBytes;\n    private int wireSeq = -1, wirePt = -1, nextFuSeq = -1;\n    private boolean waitingRecoveryIdr;\n    private long lastRenderCallbackMs, maxRenderCallbackGapMs;\n    private String lastWireFrame = "none";', 'recovery state')
+r=rr(r, '        lastWireFrame = "none";', '        lastWireFrame = "none";\n        wireSsrc=-1L; wireSeq=-1; wirePt=-1; nextFuSeq=-1; waitingRecoveryIdr=false;\n        boundaryRecoveries=0; boundarySkippedBytes=0;\n        lastRenderCallbackMs=0; maxRenderCallbackGapMs=0;', 'reset recovery state')
+r=rr(r, '        if (channel == 0) handleRtp(packet);', '        if (channel == 0) {\n            if(packet.length>=12 && ((packet[0]&255)>>6)==2) {\n                wireSsrc=((long)(packet[8]&255)<<24)|((long)(packet[9]&255)<<16)|((long)(packet[10]&255)<<8)|(packet[11]&255);\n                wireSeq=((packet[2]&255)<<8)|(packet[3]&255); wirePt=packet[1]&127;\n            }\n            handleRtp(packet);\n        }', 'remember video RTP identity')
+r=rr(r, '        if (start) {\n            fuBuffer.reset();', '        if (!start && fuActive && seq != nextFuSeq) { fuBuffer.reset(); fuActive=false; return; }\n        nextFuSeq=(seq+1)&65535;\n        if (start) {\n            fuBuffer.reset();', 'reject missing FU fragments')
+r=rr(r, '        int type = nal[0] & 0x1F;', '        int type = nal[0] & 0x1F;\n        if (waitingRecoveryIdr && type >= 1 && type <= 4) return;\n        if (type == 5) waitingRecoveryIdr=false;', 'wait for clean keyframe')
+r=rr(r, '                long renderedNow = nanoTime / 1_000_000L;', '                long callbackNow=android.os.SystemClock.elapsedRealtime();\n                if(lastRenderCallbackMs>0) maxRenderCallbackGapMs=Math.max(maxRenderCallbackGapMs, callbackNow-lastRenderCallbackMs);\n                lastRenderCallbackMs=callbackNow;\n                long renderedNow = nanoTime / 1_000_000L;', 'callback liveness independent of codec clock')
+r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summary += "boundaryRecoveries="+boundaryRecoveries+" boundarySkippedBytes="+boundarySkippedBytes+" waitingIdr="+waitingRecoveryIdr+"\\n";\n        summary += "renderCallbackMaxGapMs="+maxRenderCallbackGapMs+" renderCallbackAgeMs="+(lastRenderCallbackMs==0 ? -1 : android.os.SystemClock.elapsedRealtime()-lastRenderCallbackMs)+"\\n";\n        String result = summary + diagnosticSnapshot();', 'recovery and liveness report')
+# Method is outside the extracted legacy parser fixture; its pure-Java scanner is tested separately.
+where=r.index('    private void startCombinedMicTest()')
+r=r[:where]+'    private boolean recoverFraming(InputStream in, int marker) throws Exception {\n        if(wireSsrc<0 || wireSeq<0) return false;\n        log("RTSP boundary lost: marker=0x"+Integer.toHexString(marker)+"; previous="+lastWireFrame);\n        int skipped=RtpBoundaryRecovery.recover((java.io.PushbackInputStream)in, marker, wireSsrc, wireSeq, wirePt);\n        boundaryRecoveries++; boundarySkippedBytes+=skipped;\n        accessUnit.reset(); fuBuffer.reset(); fuActive=false; currentAuTimestamp=-1; nextFuSeq=-1;\n        waitingRecoveryIdr=true;\n        releaseDecoder();\n        log("RTSP boundary recovered using two consecutive RTP frames; skipped="+skipped+"; waiting for IDR");\n        status("Поток восстановлен. Ожидание ключевого кадра.");\n        return true;\n    }\n\n'+r[where:]
+p.write_text(r)
+
 # Exercise the actual generated parser with synthetic byte streams in Cloud.
 # No device identifiers or field payloads enter this public fixture.
 import shutil, subprocess, tempfile
 if shutil.which('javac'):
-    methods=r[r.index('    private byte[] readExactly('):r.index('    private void startCombinedMicTest()')]
+    methods=r[r.index('    private byte[] readExactly('):r.index('    private boolean recoverFraming(')]
     harness=r'''import java.io.*;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 public class ParserCheck {
  boolean running=true; long partialFrameTimeoutCount, partialFrameTimeoutBytes, framingLossCount;
  String lastWireFrame="none"; int packets; byte[] last;
+ boolean recoverFraming(InputStream in,int marker) { return false; }
  void log(String s) {} void drainDecoder() {}
  void handleInterleavedPacket(int channel, byte[] bytes) { packets++; last=bytes; }
  static class Feed extends InputStream {
@@ -327,8 +348,13 @@ public class ParserCheck {
  }
 '''+methods+'\n}\n'
     with tempfile.TemporaryDirectory() as tmp:
-        f=Path(tmp)/'ParserCheck.java';f.write_text(harness)
+        f=Path(tmp)/'ParserCheck.java';f.write_text(harness.replace('RtpBoundaryRecovery.CAPACITY', '196640'))
         subprocess.run(['javac',str(f)],check=True)
         subprocess.run(['java','-cp',tmp,'ParserCheck'],check=True)
 else:
     print('Parser runtime checks require javac; Cloud build executes them before assembling APK')
+
+if shutil.which('javac'):
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/RtpBoundaryRecovery.java','tools/RtpBoundaryRecoveryCheck.java'],check=True)
+        subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.RtpBoundaryRecoveryCheck'],check=True)

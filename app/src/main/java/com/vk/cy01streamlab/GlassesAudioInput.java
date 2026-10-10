@@ -22,14 +22,14 @@ final class GlassesAudioInput {
     private volatile boolean active;
     private volatile Thread worker;
     private volatile String state = "off";
-    private volatile long pcmBytes;
+    private volatile long pcmBytes, maxReadGapMs;
     private volatile int peak, sessionPeak;
     private volatile double rmsDb = -120.0;
     private volatile String clientSilenced = "unknown";
     private volatile boolean systemMuted;
     private volatile String inputDescription = "none";
     private volatile boolean routeVerified;
-    private final byte[] recent = new byte[16000 * 2 * 10];
+    private final byte[] recent = new byte[16000 * 2 * 120];
     private int cursor, used;
     private MediaPlayer playback;
 
@@ -39,7 +39,7 @@ final class GlassesAudioInput {
     }
     String snapshot() {
         return "bluetoothMic state=" + state + " routeVerified=" + routeVerified
-                + " source=MIC pcmBytes=" + pcmBytes + " peak=" + peak + " sessionPeak=" + sessionPeak
+                + " maxReadGapMs="+maxReadGapMs+" source=MIC pcmBytes=" + pcmBytes + " peak=" + peak + " sessionPeak=" + sessionPeak
                 + " rmsDbFS=" + String.format(Locale.US, "%.1f", rmsDb)
                 + " clientSilenced=" + clientSilenced + " systemMuted=" + systemMuted
                 + " input=" + inputDescription;
@@ -88,7 +88,7 @@ final class GlassesAudioInput {
     private void start(AudioDeviceInfo selected) {
         if(worker!=null || activity.isFinishing()) return;
         stopPlayback();
-        active=true; routeVerified=false; pcmBytes=0; peak=0; sessionPeak=0; rmsDb=-120.0;
+        active=true; routeVerified=false; pcmBytes=0; maxReadGapMs=0; peak=0; sessionPeak=0; rmsDb=-120.0;
         clientSilenced="unknown"; systemMuted=false; inputDescription="none";
         synchronized(recent) { cursor=0; used=0; }
         state="routing";
@@ -117,7 +117,7 @@ final class GlassesAudioInput {
             int minimum=AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if(minimum<=0) throw new IOException("PCM 16 кГц не поддерживается");
             recorder=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,
-                    AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(minimum*2,6400));
+                    AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(minimum*2,32000));
             if(recorder.getState()!=AudioRecord.STATE_INITIALIZED) throw new IOException("Не удалось открыть запись");
             // Prefer the matching input as well as the selected communication output.
             for (AudioDeviceInfo input : manager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
@@ -146,7 +146,9 @@ final class GlassesAudioInput {
                 }
                 if(!routeVerified) { routeVerified=true; state="receiving_pcm"; say("Маршрут Bluetooth подтверждён: «"+selected.getProductName()+"»."); }
                 if(n>0) {
-                    lastData=SystemClock.elapsedRealtime(); pcmBytes+=n;
+                    long receivedAt=SystemClock.elapsedRealtime();
+                    if(pcmBytes>0) maxReadGapMs=Math.max(maxReadGapMs,receivedAt-lastData);
+                    lastData=receivedAt; pcmBytes+=n;
                     for(int i=0;i+1<n;i+=2) {
                         int sample=(short)((data[i]&255)|(data[i+1]<<8));
                         int magnitude=Math.abs(sample);
@@ -199,7 +201,7 @@ final class GlassesAudioInput {
     void stop() { active=false; stopPlayback(); }
     private void stopPlayback() { if(playback!=null){try{playback.release();}catch(Exception ignored){}playback=null;} }
     void playRecent() {
-        if(worker!=null) {say("Сначала выключите микрофон, затем прослушайте последние 10 секунд.");return;}
+        if(worker!=null) {say("Сначала выключите микрофон, затем прослушайте запись.");return;}
         byte[] pcm;
         synchronized(recent){
             if(used==0){say("Записи с подтверждённого Bluetooth-микрофона пока нет.");return;}
@@ -207,13 +209,26 @@ final class GlassesAudioInput {
             for(int i=0;i<used;i++)pcm[i]=recent[(begin+i)%recent.length];
         }
         try {
-            stopPlayback(); File f=new File(activity.getCacheDir(),"cy01_bluetooth_recent.wav");
+            stopPlayback();
+            int clipPeak=0;
+            for(int i=0;i+1<pcm.length;i+=2) clipPeak=Math.max(clipPeak,Math.abs((short)((pcm[i]&255)|(pcm[i+1]<<8))));
+            // Playback-only gain. Keep the original captured PCM and never amplify near-silence.
+            double gain=clipPeak>=64 ? Math.max(1.0,Math.min(8.0,28000.0/clipPeak)) : 1.0;
+            for(int i=0;i+1<pcm.length;i+=2) {
+                int sample=(short)((pcm[i]&255)|(pcm[i+1]<<8));
+                int amplified=Math.max(-32768,Math.min(32767,(int)Math.round(sample*gain)));
+                pcm[i]=(byte)amplified;pcm[i+1]=(byte)(amplified>>8);
+            }
+            say(String.format(Locale.US,"Воспроизведение %.1f с · усиление ×%.1f",pcm.length/32000.0,gain));
+            File f=new File(activity.getCacheDir(),"cy01_bluetooth_recent.wav");
             ByteBuffer h=ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
             h.put(new byte[]{82,73,70,70}).putInt(36+pcm.length).put(new byte[]{87,65,86,69,102,109,116,32})
                 .putInt(16).putShort((short)1).putShort((short)1).putInt(16000).putInt(32000)
                 .putShort((short)2).putShort((short)16).put(new byte[]{100,97,116,97}).putInt(pcm.length);
             try(FileOutputStream out=new FileOutputStream(f)){out.write(h.array());out.write(pcm);}
-            playback=new MediaPlayer();playback.setDataSource(f.getAbsolutePath());
+            playback=new MediaPlayer();
+            playback.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+            playback.setDataSource(f.getAbsolutePath());
             playback.setOnCompletionListener(p->{p.release();if(playback==p)playback=null;f.delete();});
             playback.prepare();playback.start();
         } catch(Exception e){stopPlayback();say("Не удалось воспроизвести запись: "+e.getMessage());}
