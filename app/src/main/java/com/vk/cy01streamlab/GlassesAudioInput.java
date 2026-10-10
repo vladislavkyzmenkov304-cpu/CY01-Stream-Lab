@@ -230,7 +230,24 @@ final class GlassesAudioInput {
             playback.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
             playback.setDataSource(f.getAbsolutePath());
             playback.setOnCompletionListener(p->{p.release();if(playback==p)playback=null;f.delete();});
+            // Explicitly prefer the phone speaker for review while video reception continues.
+            if(Build.VERSION.SDK_INT>=28) {
+                for(AudioDeviceInfo output:manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                    if(output.getType()==AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                        say("Прослушивание: динамик телефона, запрос маршрута="+playback.setPreferredDevice(output));
+                        break;
+                    }
+                }
+            }
             playback.prepare();playback.start();
+            final MediaPlayer started=playback;
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
+                if(playback!=started || Build.VERSION.SDK_INT<28)return;
+                try{
+                    AudioDeviceInfo route=started.getRoutedDevice();
+                    say("Маршрут воспроизведения: "+(route==null ? "не подтверждён" : route.getProductName()+"/type="+route.getType()));
+                }catch(Exception ignored){}
+            },500L);
         } catch(Exception e){stopPlayback();say("Не удалось воспроизвести запись: "+e.getMessage());}
     }
 }

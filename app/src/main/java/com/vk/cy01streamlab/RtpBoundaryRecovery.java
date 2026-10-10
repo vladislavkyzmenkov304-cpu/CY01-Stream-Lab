@@ -9,7 +9,7 @@ final class RtpBoundaryRecovery {
     static final int SCAN_LIMIT = 65536;
     private final InputStream input;
     private final byte[] bytes = new byte[CAPACITY];
-    private final long deadline = System.nanoTime() + 8_000_000_000L;
+    private final long deadline = System.nanoTime() + 3_000_000_000L;
     private int size;
     private RtpBoundaryRecovery(InputStream input, int first) {
         this.input=input; bytes[size++]=(byte)first;
