@@ -41,7 +41,7 @@ final class GlassesAudioInput {
         activity.runOnUiThread(() -> { if (!activity.isFinishing()) message.accept(text); });
     }
     void toggle() {
-        if (worker != null) { stop(); say("Микрофон выключается. LIVE продолжает работать."); return; }
+        if (worker != null) { stop(); say("Микрофон выключается."); return; }
         if (Build.VERSION.SDK_INT < 31) { say("Этот аудиорежим требует Android 12 или новее."); return; }
         if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
                 || activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -55,7 +55,7 @@ final class GlassesAudioInput {
             }
             if (choices.isEmpty()) {
                 state = "no_bluetooth_audio_device";
-                say("Android не видит микрофон Bluetooth. Подключите очки как гарнитуру в настройках Bluetooth. LIVE не остановлен.");
+                say("Android не видит микрофон Bluetooth. Подключите очки как гарнитуру в настройках Bluetooth.");
                 return;
             }
             String[] names = new String[choices.size()];
@@ -94,7 +94,7 @@ final class GlassesAudioInput {
             manager.setMode(AudioManager.MODE_IN_COMMUNICATION); modeChanged=true;
             if(!manager.setCommunicationDevice(selected)) throw new IOException("Android отклонил выбор микрофона");
             selectedByUs=true;
-            say("Подключение микрофона «"+selected.getProductName()+"». Видео остаётся включённым.");
+            say("Подключение микрофона «"+selected.getProductName()+"».");
             long deadline=SystemClock.elapsedRealtime()+30000L;
             while(active && SystemClock.elapsedRealtime()<deadline) {
                 AudioDeviceInfo d=manager.getCommunicationDevice();
@@ -122,7 +122,7 @@ final class GlassesAudioInput {
                     // Discard all bytes until the actual recording input is verified.
                     Thread.sleep(10L); continue;
                 }
-                if(!routeVerified) { routeVerified=true; state="recording"; say("Bluetooth-микрофон подключён: «"+selected.getProductName()+"». LIVE продолжается."); }
+                if(!routeVerified) { routeVerified=true; state="recording"; say("Bluetooth-микрофон подключён: «"+selected.getProductName()+"»."); }
                 if(n>0) {
                     lastData=SystemClock.elapsedRealtime(); pcmBytes+=n;
                     int currentPeak=0;
