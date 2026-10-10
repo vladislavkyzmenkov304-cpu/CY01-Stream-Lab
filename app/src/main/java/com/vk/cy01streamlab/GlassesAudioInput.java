@@ -23,7 +23,11 @@ final class GlassesAudioInput {
     private volatile Thread worker;
     private volatile String state = "off";
     private volatile long pcmBytes;
-    private volatile int peak;
+    private volatile int peak, sessionPeak;
+    private volatile double rmsDb = -120.0;
+    private volatile String clientSilenced = "unknown";
+    private volatile boolean systemMuted;
+    private volatile String inputDescription = "none";
     private volatile boolean routeVerified;
     private final byte[] recent = new byte[16000 * 2 * 10];
     private int cursor, used;
@@ -35,7 +39,10 @@ final class GlassesAudioInput {
     }
     String snapshot() {
         return "bluetoothMic state=" + state + " routeVerified=" + routeVerified
-                + " pcmBytes=" + pcmBytes + " peak=" + peak;
+                + " source=MIC pcmBytes=" + pcmBytes + " peak=" + peak + " sessionPeak=" + sessionPeak
+                + " rmsDbFS=" + String.format(Locale.US, "%.1f", rmsDb)
+                + " clientSilenced=" + clientSilenced + " systemMuted=" + systemMuted
+                + " input=" + inputDescription;
     }
     private void say(String text) {
         activity.runOnUiThread(() -> { if (!activity.isFinishing()) message.accept(text); });
@@ -81,7 +88,10 @@ final class GlassesAudioInput {
     private void start(AudioDeviceInfo selected) {
         if(worker!=null || activity.isFinishing()) return;
         stopPlayback();
-        active=true; routeVerified=false; pcmBytes=0; peak=0; cursor=0; used=0; state="routing";
+        active=true; routeVerified=false; pcmBytes=0; peak=0; sessionPeak=0; rmsDb=-120.0;
+        clientSilenced="unknown"; systemMuted=false; inputDescription="none";
+        synchronized(recent) { cursor=0; used=0; }
+        state="routing";
         worker=new Thread(() -> capture(selected), "CY01-Bluetooth-microphone"); worker.start();
     }
     private void capture(AudioDeviceInfo selected) {
@@ -106,12 +116,24 @@ final class GlassesAudioInput {
             if(d==null || d.getId()!=selected.getId()) throw new IOException("Аудиомаршрут не подключился за 30 секунд");
             int minimum=AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if(minimum<=0) throw new IOException("PCM 16 кГц не поддерживается");
-            recorder=new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION,16000,
+            recorder=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,
                     AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(minimum*2,6400));
             if(recorder.getState()!=AudioRecord.STATE_INITIALIZED) throw new IOException("Не удалось открыть запись");
+            // Prefer the matching input as well as the selected communication output.
+            for (AudioDeviceInfo input : manager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                if (selectedRoute(selected, input)) {
+                    say("Bluetooth input preference accepted=" + recorder.setPreferredDevice(input));
+                    break;
+                }
+            }
             recorder.startRecording();
+            if(recorder.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING)
+                throw new IOException("AudioRecord не начал запись");
             byte[] data=new byte[640];
             long routeDeadline=SystemClock.elapsedRealtime()+5000L, lastReport=0L, lastData=SystemClock.elapsedRealtime();
+            long windowSamples=0L;
+            double windowSquares=0.0;
+            int windowPeak=0;
             while(active) {
                 int n=recorder.read(data,0,data.length,AudioRecord.READ_NON_BLOCKING);
                 if(n<0) throw new IOException("AudioRecord read="+n);
@@ -122,20 +144,46 @@ final class GlassesAudioInput {
                     // Discard all bytes until the actual recording input is verified.
                     Thread.sleep(10L); continue;
                 }
-                if(!routeVerified) { routeVerified=true; state="recording"; say("Bluetooth-микрофон подключён: «"+selected.getProductName()+"»."); }
+                if(!routeVerified) { routeVerified=true; state="receiving_pcm"; say("Маршрут Bluetooth подтверждён: «"+selected.getProductName()+"»."); }
                 if(n>0) {
                     lastData=SystemClock.elapsedRealtime(); pcmBytes+=n;
-                    int currentPeak=0;
-                    for(int i=0;i+1<n;i+=2) currentPeak=Math.max(currentPeak,Math.abs((short)((data[i]&255)|(data[i+1]<<8))));
-                    peak=currentPeak;
+                    for(int i=0;i+1<n;i+=2) {
+                        int sample=(short)((data[i]&255)|(data[i+1]<<8));
+                        int magnitude=Math.abs(sample);
+                        windowPeak=Math.max(windowPeak,magnitude);
+                        sessionPeak=Math.max(sessionPeak,magnitude);
+                        windowSquares+=(double)sample*sample;
+                        windowSamples++;
+                    }
                     synchronized(recent) {for(int i=0;i<n;i++){recent[cursor]=data[i];cursor=(cursor+1)%recent.length;used=Math.min(used+1,recent.length);}}
-                    if(lastData-lastReport>=5000L) {lastReport=lastData;say("Микрофон включён · уровень " + (peak * 100 / 32768) + "%");}
+                    if(lastData-lastReport>=1000L) {
+                        lastReport=lastData;
+                        peak=windowPeak;
+                        rmsDb=windowSamples>0 && windowSquares>0
+                                ? 20.0*Math.log10(Math.sqrt(windowSquares/windowSamples)/32768.0) : -120.0;
+                        windowPeak=0; windowSquares=0.0; windowSamples=0;
+                        systemMuted=manager.isMicrophoneMute();
+                        AudioRecordingConfiguration config=recorder.getActiveRecordingConfiguration();
+                        clientSilenced=config==null ? "unknown" : Boolean.toString(config.isClientSilenced());
+                        AudioDeviceInfo actual=recorder.getRoutedDevice();
+                        inputDescription=actual==null ? "none" : actual.getProductName()+"/type="+actual.getType()
+                                +"/rate="+(config==null ? "unknown" : config.getFormat().getSampleRate());
+                        if(systemMuted || "true".equals(clientSilenced)) {
+                            state="system_silenced";
+                            say("Запись заглушена Android: mute="+systemMuted+", silenced="+clientSilenced);
+                        } else {
+                            state=rmsDb < -60.0 ? "low_signal" : "signal_present";
+                            say((rmsDb < -60.0 ? "Сигнал почти отсутствует" : "Есть аудиосигнал")
+                                    +String.format(Locale.US," · %.1f dBFS · пик %.2f%%",rmsDb,peak*100.0/32768.0));
+                        }
+                    }
                 } else {
                     if(SystemClock.elapsedRealtime()-lastData>5000L) throw new IOException("Микрофон не отдаёт PCM-данные");
                     Thread.sleep(10L);
                 }
             }
             state="stopped";
+            say("Запись остановлена. " + snapshot());
         } catch(Exception e) {state="error";say("Микрофон: "+e.getMessage()+". "+snapshot());}
         finally {
             if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();}

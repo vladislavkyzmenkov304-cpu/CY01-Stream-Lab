@@ -224,12 +224,12 @@ r=rr(r, '        String result = summary + diagnosticSnapshot();', '        summ
 p.write_text(r)
 print('v2.5.2 prepared: LIVE-safe mic guard, bounded RTSP reconnect, frozen end statistics')
 
-# v2.6.0: use Android's Bluetooth communication input without BLE camera-mode commands.
-g=Path('app/build.gradle');s=g.read_text().replace('versionCode 2502','versionCode 2600').replace("versionName '2.5.2'", "versionName '2.6.0'");g.write_text(s)
-p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');s=p.read_text().replace('CY01 Live v2.5.2','CY01 Live v2.6.0');p.write_text(s)
+# v2.6.1: use Android's Bluetooth communication input without BLE camera-mode commands.
+g=Path('app/build.gradle');s=g.read_text().replace('versionCode 2502','versionCode 2601').replace("versionName '2.5.2'", "versionName '2.6.1'");g.write_text(s)
+p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');s=p.read_text().replace('CY01 Live v2.5.2','CY01 Live v2.6.1');p.write_text(s)
 p=Path('app/src/main/AndroidManifest.xml');s=p.read_text();s=s.replace('    <application','    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n\n    <application',1);p.write_text(s)
 p=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java');r=p.read_text()
-r=r.replace('CY01 LIVE v2.5.2','CY01 LIVE v2.6.0').replace('CY01 LIVE VIDEO v2.5','CY01 LIVE VIDEO v2.6.0')
+r=r.replace('CY01 LIVE v2.5.2','CY01 LIVE v2.6.1').replace('CY01 LIVE VIDEO v2.5','CY01 LIVE VIDEO v2.6.1')
 r=rr(r,'    private TextView statusView;', '    private GlassesAudioInput glassesAudio;\n    private TextView statusView;', 'audio input field')
 r=rr(r,'        buildUi();','        buildUi();\n        glassesAudio = new GlassesAudioInput(this, text -> { log(text); status(text); });','create audio controller')
 a=r.index('    private void startCombinedMicTest() {');b=r.index('    private void pollCameraRecoveryReady()',a)
@@ -273,7 +273,7 @@ r=rr(r,'''                byte[] packet = readExactly(in, length);
                 handleInterleavedPacket(channel, packet);''','wire frame metadata')
 p.write_text(r)
 
-print('v2.6.0 prepared: explicit Bluetooth microphone route independent of BLE preview control')
+print('v2.6.1 prepared: explicit Bluetooth microphone route independent of BLE preview control')
 
 # Measure actual render timestamps, not delayed/batched UI callback arrival times.
 r=rr(r, '                long renderedNow = System.currentTimeMillis();', '                if (mc != decoder || !running) return;\n                long renderedNow = nanoTime / 1_000_000L;', 'actual frame render timestamps')
