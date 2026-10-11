@@ -379,6 +379,9 @@ mainSource=mainFile.read_text()
 assert 'oneTapLiveRequested ? 1800000L : 240000L' in mainSource
 mainFile.write_text(mainSource.replace('oneTapLiveRequested ? 1800000L : 240000L', 'oneTapLiveRequested ? 7200000L : 240000L'))
 
+exec(Path('tools/prepare_v266.py').read_text())
+r=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java').read_text()
+
 # Exercise the actual generated parser with synthetic byte streams in Cloud.
 # No device identifiers or field payloads enter this public fixture.
 import shutil, subprocess, tempfile
@@ -463,6 +466,7 @@ public class LiveSchedulingCheck {
  Handler main=new Handler();
  void log(String s){} void status(String s){} boolean isFinishing(){return finishing;}
  void startRawSession(){starts++;running=true;stopEpoch++;}
+ void retryTransportOrRoute(){startRawSession();}
  void failed(boolean retryTransport,int epoch) {
 '''+scheduling+'''
  }
