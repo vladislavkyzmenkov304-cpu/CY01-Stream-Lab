@@ -49,6 +49,12 @@ public class VideoPipelineCheck {
         long afterGap=clock.schedule(100000,now+5_000_000_000L);
         require(afterGap==now+5_250_000_000L && clock.rebuffers==1,"long stall must rebase clock");
         clock.reset();require(clock.schedule(9_000_000,now)==now+250_000_000L,"decoder reset clock");
+        clock.reset();clock.observe(0,now);
+        require(clock.schedule(0,now+150_000_000L)==now+250_000_000L,"decoder startup added persistent latency");
+        clock.observe(33333,now+33_333_000L);
+        require(clock.schedule(33333,now+180_000_000L)==now+283_333_000L,"arrival pacing");
+        clock.observe(66666,now+500_000_000L);
+        require(clock.schedule(66666,now+500_000_000L)==-1,"late arrival shifted whole timeline");
         System.out.println("Video pipeline PASS: independent reader, queue wrap/backpressure, timeout preservation, EOF/error/close, burst pacing, late drop, stall rebase");
     }
 }

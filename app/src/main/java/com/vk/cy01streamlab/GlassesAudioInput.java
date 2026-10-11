@@ -32,6 +32,8 @@ final class GlassesAudioInput {
     private final byte[] recent = new byte[16000 * 2 * 120];
     private int cursor, used;
     private MediaPlayer playback;
+    private File playbackFile;
+    private volatile int playbackEpoch;
 
     GlassesAudioInput(Activity a, Consumer<String> m) {
         activity = a; message = m;
@@ -199,33 +201,44 @@ final class GlassesAudioInput {
         }
     }
     void stop() { active=false; stopPlayback(); }
-    private void stopPlayback() { if(playback!=null){try{playback.release();}catch(Exception ignored){}playback=null;} }
-    void playRecent() {
+    private void stopPlayback() { playbackEpoch++; if(playbackFile!=null){playbackFile.delete();playbackFile=null;} if(playback!=null){try{playback.release();}catch(Exception ignored){}playback=null;} }
+    void playRecent() { playRecent(true); }
+    void playRecent(boolean enhanced) {
         if(worker!=null) {say("Сначала выключите микрофон, затем прослушайте запись.");return;}
         byte[] pcm;
         synchronized(recent){
             if(used==0){say("Записи с подтверждённого Bluetooth-микрофона пока нет.");return;}
             pcm=new byte[used];int begin=(cursor-used+recent.length)%recent.length;
-            for(int i=0;i<used;i++)pcm[i]=recent[(begin+i)%recent.length];
+            int first=Math.min(used,recent.length-begin);
+            System.arraycopy(recent,begin,pcm,0,first);
+            System.arraycopy(recent,0,pcm,first,used-first);
         }
-        try {
-            stopPlayback();
-            int clipPeak=0;
-            for(int i=0;i+1<pcm.length;i+=2) clipPeak=Math.max(clipPeak,Math.abs((short)((pcm[i]&255)|(pcm[i+1]<<8))));
-            // Playback-only gain. Keep the original captured PCM and never amplify near-silence.
-            double gain=clipPeak>=64 ? Math.max(1.0,Math.min(8.0,28000.0/clipPeak)) : 1.0;
-            for(int i=0;i+1<pcm.length;i+=2) {
-                int sample=(short)((pcm[i]&255)|(pcm[i+1]<<8));
-                int amplified=Math.max(-32768,Math.min(32767,(int)Math.round(sample*gain)));
-                pcm[i]=(byte)amplified;pcm[i+1]=(byte)(amplified>>8);
-            }
-            say(String.format(Locale.US,"Воспроизведение %.1f с · усиление ×%.1f",pcm.length/32000.0,gain));
-            File f=new File(activity.getCacheDir(),"cy01_bluetooth_recent.wav");
+        stopPlayback();
+        final int epoch=playbackEpoch;
+        final byte[] captured=pcm;
+        say("Подготовка записи для прослушивания…");
+        new Thread(()->{
+          File prepared=null;
+          try {
+            byte[] review=enhanced ? SpeechPlaybackLeveler.process(captured) : captured;
+            File f=File.createTempFile("cy01_review_",".wav",activity.getCacheDir());
+            prepared=f;
             ByteBuffer h=ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-            h.put(new byte[]{82,73,70,70}).putInt(36+pcm.length).put(new byte[]{87,65,86,69,102,109,116,32})
+            h.put(new byte[]{82,73,70,70}).putInt(36+review.length).put(new byte[]{87,65,86,69,102,109,116,32})
                 .putInt(16).putShort((short)1).putShort((short)1).putInt(16000).putInt(32000)
-                .putShort((short)2).putShort((short)16).put(new byte[]{100,97,116,97}).putInt(pcm.length);
-            try(FileOutputStream out=new FileOutputStream(f)){out.write(h.array());out.write(pcm);}
+                .putShort((short)2).putShort((short)16).put(new byte[]{100,97,116,97}).putInt(review.length);
+            try(FileOutputStream out=new FileOutputStream(f)){out.write(h.array());out.write(review);}
+            activity.runOnUiThread(()->{
+                if(epoch!=playbackEpoch || active || activity.isFinishing()){f.delete();return;}
+                say(String.format(Locale.US,"Воспроизведение %.1f с · %s",review.length/32000.0,enhanced ? "выравнивание речи" : "оригинал"));
+                startPreparedPlayback(f);
+            });
+          } catch(Exception e){if(prepared!=null)prepared.delete();say("Не удалось подготовить запись: "+e.getMessage());}
+        },"CY01-audio-review").start();
+    }
+    private void startPreparedPlayback(File f) {
+        try {
+            playbackFile=f;
             playback=new MediaPlayer();
             playback.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
             playback.setDataSource(f.getAbsolutePath());
@@ -239,7 +252,9 @@ final class GlassesAudioInput {
                     }
                 }
             }
-            playback.prepare();playback.start();
+            playback.setOnPreparedListener(p->{if(playback==p)p.start();});
+            playback.setOnErrorListener((p,what,extra)->{if(playback==p)stopPlayback();f.delete();say("Ошибка прослушивания: "+what+"/"+extra);return true;});
+            playback.prepareAsync();
             final MediaPlayer started=playback;
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->{
                 if(playback!=started || Build.VERSION.SDK_INT<28)return;

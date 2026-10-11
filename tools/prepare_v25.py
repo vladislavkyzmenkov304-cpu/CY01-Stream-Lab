@@ -353,6 +353,26 @@ p.write_text(r)
 g=Path('app/build.gradle');g.write_text(g.read_text().replace('versionCode 2603','versionCode 2604').replace('2.6.3','2.6.4'))
 m=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');m.write_text(m.read_text().replace('2.6.3','2.6.4'))
 
+# v2.6.5: anchor presentation at RTP receipt, bounded incomplete reads, LIVE isolation.
+r=rr(r,'    private volatile boolean liveRequested;','    public static volatile boolean liveRequested;','LIVE probe guard visibility')
+r=rr(r,'        long rtpArrivalMs = System.currentTimeMillis();','        if(baseRtpTimestamp<0)baseRtpTimestamp=timestamp;\n        presentationClock.observe(((timestamp-baseRtpTimestamp)&0xFFFFFFFFL)*1_000_000L/90_000L,System.nanoTime());\n        long rtpArrivalMs = System.currentTimeMillis();','anchor before decoder setup')
+r=rr(r,'long deadline=System.nanoTime()+2_500_000_000L;','long deadline=System.nanoTime()+750_000_000L;','short consumer deadline')
+r=rr(r,'        int off = 0;\n        int timeoutCount = 0;','        int off = 0;\n        long frameDeadline=System.nanoTime()+2_500_000_000L;\n        int timeoutCount = 0;','absolute incomplete frame deadline')
+r=rr(r,'        while (off < length) {\n            try {','        while (off < length) {\n            if(System.nanoTime()>frameDeadline)throw new SocketTimeoutException("Frame completion budget exceeded: "+off+"/"+length);\n            try {','bound slow trickle frame')
+r=r.replace('timeoutCount >= 4','timeoutCount >= 3').replace('RTSP idle for four read deadlines','RTSP idle for three read deadlines')
+r=rr(r,'                            control.write(b);','                            if(b!=9 && b!=10 && b!=13 && (b<32 || b>126))throw new java.io.IOException("Binary byte in RTSP control header; reconnect required");\n                            control.write(b);','reject corrupted ASCII control promptly')
+r=rr(r,'            codec.configure(format, surface, null, 0);','            boolean lowLatency=false;\n            try { lowLatency=android.os.Build.VERSION.SDK_INT>=30 && codec.getCodecInfo().getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).isFeatureSupported("low-latency"); } catch(Exception ignored) {}\n            if(lowLatency)format.setInteger("low-latency",1);\n            log("Decoder="+codec.getName()+" lowLatencyRequested="+lowLatency);\n            codec.configure(format, surface, null, 0);','advertised low latency only')
+r=rr(r,'        root.addView(button("ПРОСЛУШАТЬ ЗАПИСЬ", v -> glassesAudio.playRecent()));','        root.addView(button("ПРОСЛУШАТЬ — РЕЧЬ", v -> glassesAudio.playRecent()));\n        root.addView(button("ПРОСЛУШАТЬ — ОРИГИНАЛ", v -> glassesAudio.playRecent(false)));','original audio comparison')
+r=rr(r,'            codec.setOnFrameRenderedListener((mc, presentationTimeUs, nanoTime) -> {','            MediaCodec.OnFrameRenderedListener frameListener=(mc, presentationTimeUs, nanoTime) -> {','retain listener for low latency fallback')
+r=rr(r,'            }, main);','            };\n            codec.setOnFrameRenderedListener(frameListener,main);','attach retained frame listener')
+r=rr(r,'            codec.configure(format, surface, null, 0);','            try { codec.configure(format, surface, null, 0); }\n            catch(Exception rejected) {\n                if(!lowLatency)throw rejected;\n                codec.release(); format.removeKey("low-latency");\n                codec=MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);\n                codec.setOnFrameRenderedListener(frameListener,main);\n                codec.configure(format,surface,null,0);\n                log("Low-latency configuration rejected; normal decoder fallback active");\n            }','safe normal decoder fallback')
+r=r.replace('2.6.4','2.6.5');p.write_text(r)
+g=Path('app/build.gradle');g.write_text(g.read_text().replace('versionCode 2604','versionCode 2605').replace('2.6.4','2.6.5'))
+m=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');ms=m.read_text().replace('2.6.4','2.6.5')
+ms=rr(ms,'    private void runBaseProbeSuite() {','    private void runBaseProbeSuite() {\n        if(RawRtspH264Activity.liveRequested || oneTapLiveRequested || oneTapLaunchInProgress) { log("Base probe suppressed during LIVE"); return; }','no extraneous RTSP probing during LIVE')
+ms=rr(ms,'    private void requestGlassesIp() {','    private void requestGlassesIp() {\n        if(RawRtspH264Activity.liveRequested && glassesIp!=null) return;','cancel stale IP query during LIVE')
+m.write_text(ms)
+
 # Permit the requested endurance run without the old 30-minute LIVE auto-stop.
 mainFile=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java')
 mainSource=mainFile.read_text()
@@ -468,3 +488,8 @@ public class LiveSchedulingCheck {
         f=Path(tmp)/'LiveSchedulingCheck.java';f.write_text(harness)
         subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/LiveRetryPolicy.java',str(f)],check=True)
         subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.LiveSchedulingCheck'],check=True)
+
+if shutil.which('javac'):
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/SpeechPlaybackLeveler.java','tools/SpeechPlaybackLevelerCheck.java'],check=True)
+        subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.SpeechPlaybackLevelerCheck'],check=True)

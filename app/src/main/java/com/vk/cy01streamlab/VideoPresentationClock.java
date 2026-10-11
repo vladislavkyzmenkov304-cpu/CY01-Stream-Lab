@@ -7,6 +7,12 @@ final class VideoPresentationClock {
     private long anchorNs;
     long rebuffers, lateDrops;
     void reset(){initialized=false;}
+    // Anchor on packet arrival, before codec setup/queueing. A delayed output
+    // must not permanently add the decoder startup time to every future frame.
+    void observe(long ptsUs,long arrivalNs) {
+        long candidate=arrivalNs+BUFFER_NS-ptsUs*1000L;
+        if(!initialized || candidate<anchorNs){anchorNs=candidate;initialized=true;}
+    }
     long schedule(long ptsUs,long nowNs) {
         long mediaNs=ptsUs*1000L;
         if(!initialized){anchorNs=nowNs+BUFFER_NS-mediaNs;initialized=true;}
