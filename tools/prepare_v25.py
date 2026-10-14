@@ -380,6 +380,16 @@ assert 'oneTapLiveRequested ? 1800000L : 240000L' in mainSource
 mainFile.write_text(mainSource.replace('oneTapLiveRequested ? 1800000L : 240000L', 'oneTapLiveRequested ? 7200000L : 240000L'))
 
 exec(Path('tools/prepare_v266.py').read_text())
+# v2.6.7: save the captured original to public Downloads without leaving LIVE.
+p=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java')
+s=p.read_text()
+a='        root.addView(button("ПРОСЛУШАТЬ — ОРИГИНАЛ", v -> glassesAudio.playRecent(false)));'
+assert a in s
+s=s.replace(a,a+'\n        root.addView(button("СОХРАНИТЬ WAV НА ТЕЛЕФОН", v -> glassesAudio.saveOriginalWav()));')
+p.write_text(s.replace('2.6.6','2.6.7'))
+p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');p.write_text(p.read_text().replace('2.6.6','2.6.7'))
+p=Path('app/build.gradle');p.write_text(p.read_text().replace('versionCode 2606','versionCode 2607').replace('2.6.6','2.6.7'))
+
 r=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java').read_text()
 
 # Exercise the actual generated parser with synthetic byte streams in Cloud.

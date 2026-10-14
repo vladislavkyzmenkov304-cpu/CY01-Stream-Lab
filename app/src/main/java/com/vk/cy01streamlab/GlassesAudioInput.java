@@ -202,6 +202,51 @@ final class GlassesAudioInput {
     }
     void stop() { active=false; stopPlayback(); }
     private void stopPlayback() { playbackEpoch++; if(playbackFile!=null){playbackFile.delete();playbackFile=null;} if(playback!=null){try{playback.release();}catch(Exception ignored){}playback=null;} }
+    private volatile boolean savingWav;
+    void saveOriginalWav() {
+        if(worker!=null){say("Сначала выключите микрофон, затем сохраните WAV.");return;}
+        if(savingWav){say("WAV уже сохраняется…");return;}
+        if(Build.VERSION.SDK_INT<29){say("Сохранение WAV требует Android 10 или новее.");return;}
+        final byte[] pcm;
+        synchronized(recent){
+            if(used==0){say("Записи пока нет. Включите микрофон, затем выключите его.");return;}
+            pcm=new byte[used];int begin=(cursor-used+recent.length)%recent.length;
+            int first=Math.min(used,recent.length-begin);
+            System.arraycopy(recent,begin,pcm,0,first);
+            System.arraycopy(recent,0,pcm,first,used-first);
+        }
+        savingWav=true;
+        say("Сохранение исходного WAV…");
+        new Thread(()->{
+            android.net.Uri uri=null;
+            android.content.ContentResolver resolver=activity.getApplicationContext().getContentResolver();
+            String name="CY01_original_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS",Locale.US).format(new Date())+".wav";
+            try {
+                android.content.ContentValues values=new android.content.ContentValues();
+                values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);
+                values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,"audio/wav");
+                values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,android.os.Environment.DIRECTORY_DOWNLOADS+"/CY01");
+                values.put(android.provider.MediaStore.MediaColumns.IS_PENDING,1);
+                uri=resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+                if(uri==null)throw new IOException("Не удалось создать файл");
+                ByteBuffer h=ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+                h.put(new byte[]{82,73,70,70}).putInt(36+pcm.length).put(new byte[]{87,65,86,69,102,109,116,32})
+                    .putInt(16).putShort((short)1).putShort((short)1).putInt(16000).putInt(32000)
+                    .putShort((short)2).putShort((short)16).put(new byte[]{100,97,116,97}).putInt(pcm.length);
+                try(OutputStream out=resolver.openOutputStream(uri,"w")){
+                    if(out==null)throw new IOException("Не удалось открыть файл");
+                    out.write(h.array());out.write(pcm);
+                }
+                values.clear();values.put(android.provider.MediaStore.MediaColumns.IS_PENDING,0);
+                if(resolver.update(uri,values,null,null)!=1)throw new IOException("Не удалось завершить сохранение");
+                say(String.format(Locale.US,"WAV сохранён: Загрузки/CY01/%s · %.1f с · оригинал без обработки (до 120 с)",name,pcm.length/32000.0));
+            }catch(Exception e){
+                if(uri!=null)try{resolver.delete(uri,null,null);}catch(Exception ignored){}
+                say("Не удалось сохранить WAV: "+e.getMessage());
+            }finally{savingWav=false;}
+        },"CY01-save-wav").start();
+    }
+
     void playRecent() { playRecent(true); }
     void playRecent(boolean enhanced) {
         if(worker!=null) {say("Сначала выключите микрофон, затем прослушайте запись.");return;}
