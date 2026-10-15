@@ -19,6 +19,21 @@ final class GlassesAudioInput {
     private final Activity activity;
     private final AudioManager manager;
     private final Consumer<String> message;
+    private boolean disableAndroidEffects;
+    private volatile String recordedMode = "standard";
+    private volatile String effectsReport = "not_started";
+    void chooseCaptureMode() {
+        if(worker!=null){say("Выключите микрофон перед сменой режима.");return;}
+        new AlertDialog.Builder(activity).setTitle("Обработка записи")
+            .setSingleChoiceItems(new String[]{"Стандартный", "Без эффектов Android (если доступно)"},
+                disableAndroidEffects?1:0, (dialog,which)->{
+                    if(worker!=null){say("Сначала выключите микрофон.");dialog.dismiss();return;}
+                    disableAndroidEffects=which==1;
+                    say("Режим следующей записи: "+(disableAndroidEffects?"без эффектов Android (если доступно)":"стандартный")
+                        +". Обработка внутри очков этим переключателем не управляется.");
+                    dialog.dismiss();
+                }).setNegativeButton("Отмена",null).show();
+    }
     private volatile boolean active;
     private volatile Thread worker;
     private volatile String state = "off";
@@ -44,7 +59,7 @@ final class GlassesAudioInput {
                 + " maxReadGapMs="+maxReadGapMs+" source=MIC pcmBytes=" + pcmBytes + " peak=" + peak + " sessionPeak=" + sessionPeak
                 + " rmsDbFS=" + String.format(Locale.US, "%.1f", rmsDb)
                 + " clientSilenced=" + clientSilenced + " systemMuted=" + systemMuted
-                + " input=" + inputDescription;
+                + " input=" + inputDescription + " captureMode="+recordedMode+" androidEffects={"+effectsReport+"}";
     }
     private void say(String text) {
         activity.runOnUiThread(() -> { if (!activity.isFinishing()) message.accept(text); });
@@ -93,11 +108,14 @@ final class GlassesAudioInput {
         active=true; routeVerified=false; pcmBytes=0; maxReadGapMs=0; peak=0; sessionPeak=0; rmsDb=-120.0;
         clientSilenced="unknown"; systemMuted=false; inputDescription="none";
         synchronized(recent) { cursor=0; used=0; }
+        recordedMode=disableAndroidEffects?"android_fx_off_requested":"standard";
+        effectsReport="not_started";
         state="routing";
         worker=new Thread(() -> capture(selected), "CY01-Bluetooth-microphone"); worker.start();
     }
     private void capture(AudioDeviceInfo selected) {
         AudioRecord recorder=null;
+        CaptureAudioEffects effects=null;
         int oldMode=manager.getMode();
         boolean modeChanged=false, selectedByUs=false;
         try {
@@ -128,6 +146,10 @@ final class GlassesAudioInput {
                     break;
                 }
             }
+            effects=new CaptureAudioEffects(recorder.getAudioSessionId(),
+                    recordedMode.equals("android_fx_off_requested"));
+            effectsReport=effects.snapshot();
+            say("Обработка Android: "+effectsReport);
             recorder.startRecording();
             if(recorder.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING)
                 throw new IOException("AudioRecord не начал запись");
@@ -166,6 +188,10 @@ final class GlassesAudioInput {
                         rmsDb=windowSamples>0 && windowSquares>0
                                 ? 20.0*Math.log10(Math.sqrt(windowSquares/windowSamples)/32768.0) : -120.0;
                         windowPeak=0; windowSquares=0.0; windowSamples=0;
+                        String observedEffects=effects.snapshot();
+                        if(!observedEffects.equals(effectsReport)){
+                            effectsReport=observedEffects;say("Обработка Android: "+effectsReport);
+                        }
                         systemMuted=manager.isMicrophoneMute();
                         AudioRecordingConfiguration config=recorder.getActiveRecordingConfiguration();
                         clientSilenced=config==null ? "unknown" : Boolean.toString(config.isClientSilenced());
@@ -190,6 +216,7 @@ final class GlassesAudioInput {
             say("Запись остановлена. " + snapshot());
         } catch(Exception e) {state="error";say("Микрофон: "+e.getMessage()+". "+snapshot());}
         finally {
+            if(effects!=null){effectsReport=effects.snapshot();effects.close();}
             if(recorder!=null){try{recorder.stop();}catch(Exception ignored){}recorder.release();}
             try {
                 AudioDeviceInfo current=Build.VERSION.SDK_INT>=31?manager.getCommunicationDevice():null;
@@ -215,12 +242,13 @@ final class GlassesAudioInput {
             System.arraycopy(recent,begin,pcm,0,first);
             System.arraycopy(recent,0,pcm,first,used-first);
         }
+        final String exportMode=recordedMode;
         savingWav=true;
         say("Сохранение исходного WAV…");
         new Thread(()->{
             android.net.Uri uri=null;
             android.content.ContentResolver resolver=activity.getApplicationContext().getContentResolver();
-            String name="CY01_original_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS",Locale.US).format(new Date())+".wav";
+            String name="CY01_original_"+exportMode+"_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS",Locale.US).format(new Date())+".wav";
             try {
                 android.content.ContentValues values=new android.content.ContentValues();
                 values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);

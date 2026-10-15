@@ -389,6 +389,16 @@ s=s.replace(a,a+'\n        root.addView(button("СОХРАНИТЬ WAV НА ТЕ
 p.write_text(s.replace('2.6.6','2.6.7'))
 p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');p.write_text(p.read_text().replace('2.6.6','2.6.7'))
 p=Path('app/build.gradle');p.write_text(p.read_text().replace('versionCode 2606','versionCode 2607').replace('2.6.6','2.6.7'))
+# v2.6.8: independently selectable Android capture effects, unchanged video pipeline.
+p=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java')
+s=p.read_text()
+a='        root.addView(button("СОХРАНИТЬ WAV НА ТЕЛЕФОН", v -> glassesAudio.saveOriginalWav()));'
+assert a in s
+s=s.replace(a,'        root.addView(button("РЕЖИМ ЗАПИСИ МИКРОФОНА", v -> glassesAudio.chooseCaptureMode()));\n'+a)
+p.write_text(s.replace('2.6.7','2.6.8'))
+p=Path('app/src/main/java/com/vk/cy01streamlab/MainActivityV03.java');p.write_text(p.read_text().replace('2.6.7','2.6.8'))
+p=Path('app/build.gradle');p.write_text(p.read_text().replace('versionCode 2607','versionCode 2608').replace('2.6.7','2.6.8'))
+
 
 r=Path('app/src/main/java/com/vk/cy01streamlab/RawRtspH264Activity.java').read_text()
 
@@ -507,3 +517,6 @@ if shutil.which('javac'):
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(['javac','-d',tmp,'app/src/main/java/com/vk/cy01streamlab/SpeechPlaybackLeveler.java','tools/SpeechPlaybackLevelerCheck.java'],check=True)
         subprocess.run(['java','-cp',tmp,'com.vk.cy01streamlab.SpeechPlaybackLevelerCheck'],check=True)
+
+if shutil.which('javac'):
+    subprocess.run(['python3','tools/check_capture_effects.py'],check=True)
